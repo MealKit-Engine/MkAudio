@@ -1,4 +1,4 @@
-# MealKit Audio
+# MkAudio
 
 Sound event runtime for games, part of the [MealKit](https://github.com/MealKit-Engine/MealKit) tool family. Free, MIT.
 
@@ -32,7 +32,7 @@ The runtime (`mkaudio::Mixer`, built on [miniaudio](https://github.com/mackron/m
 Events and buses live in one text file that merges in git (`mkaudio/Events.h`, in a MealKit project `assets/sounds.events`):
 
 ```text
-# MealKit audio events. Edit them in MealKit Audio or by hand
+# MealKit audio events. Edit them in MkAudio or by hand
 @format audio-events 2
 
 mixbus ambience
@@ -67,17 +67,17 @@ volumeAtMin 0.2
 
 Clip files are opened from disk by default. When they live in a pack file or memory, set `Desc::readFile` (path → whole file bytes); the mixer reads clips, streamed music included, through it.
 
-## MealKit Audio (the authoring tool)
+## MkAudio (the authoring tool)
 
-`MealKitAudio` is the app sound designers use: a list of events, every setting of an event with curve and distance graphs, clips picked from the project's `assets/`, buses with parents, mix volumes, reverb, ducking and live meters, music tracks (stems, tempo, transitions; preview with the stem parameter and stingers), snapshots (preview on/off) and a reverb preview, preview through the same runtime the game uses (parameter, distance and occlusion sliders), undo, and a live connection to a running MealKit game or editor of the project (play the event in the game, see the game's voices and buses; saving updates the game at once).
+`MkAudio` is the app sound designers use: a list of events, every setting of an event with curve and distance graphs, clips picked from the project's `assets/`, buses with parents, mix volumes, reverb, ducking and live meters, music tracks (stems, tempo, transitions; preview with the stem parameter and stingers), snapshots (preview on/off) and a reverb preview, preview through the same runtime the game uses (parameter, distance and occlusion sliders), undo, and a live connection to a running MealKit game or editor of the project (play the event in the game, see the game's voices and buses; saving updates the game at once).
 
 ```sh
-build/bin/MealKitAudio --project <MealKit project folder>
+build/bin/MkAudio --project <MealKit project folder>
 ```
 
-Golden render tests: `MealKitAudio --golden --project <folder>` renders every event alone without a device (2D, fixed seed, parameters at their defaults) and compares its loudness over time (rms and peak per 10 ms, in dB) with `<project>/tests/audio/<event>.golden`, within 1.5 dB above -60 dB, so a changed clip, curve or bus fails while float noise between compilers does not. A missing file is written; `--update` rewrites them after an intended change, `--event <name>` runs one. It prints `GOLDEN ok|new|updated|FAIL <event>` and exits with 1 on a failure. The library side is `mkaudio/Golden.h` (`renderEnvelope`, `compareEnvelopes`).
+Golden render tests: `MkAudio --golden --project <folder>` renders every event alone without a device (2D, fixed seed, parameters at their defaults) and compares its loudness over time (rms and peak per 10 ms, in dB) with `<project>/tests/audio/<event>.golden`, within 1.5 dB above -60 dB, so a changed clip, curve or bus fails while float noise between compilers does not. A missing file is written; `--update` rewrites them after an intended change, `--event <name>` runs one. It prints `GOLDEN ok|new|updated|FAIL <event>` and exits with 1 on a failure. The library side is `mkaudio/Golden.h` (`renderEnvelope`, `compareEnvelopes`).
 
-The MealKit editor lists it in its **Tools** menu when the folder with `MealKitAudio` and `mealkit-tool.txt` is in `%LOCALAPPDATA%\MealKit\tools\` (or pass `--tool-path build/bin` to the editor). Built with SDL3 and Dear ImGui.
+The MealKit editor lists it in its **Tools** menu when the folder with `MkAudio` and `mealkit-tool.txt` is in `%LOCALAPPDATA%\MealKit\tools\` (or pass `--tool-path build/bin` to the editor). Built with SDL3 and Dear ImGui.
 
 ## Build
 

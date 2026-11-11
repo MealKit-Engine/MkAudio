@@ -1,4 +1,4 @@
-# mkaudio: sound event runtime (MealKit Audio). Built standalone it includes tests and the authoring tool (tool/); added by another project with add_subdirectory, only the library.
+# mkaudio: sound event runtime (MkAudio). Built standalone it includes tests and the authoring tool (tool/); added by another project with add_subdirectory, only the library.
 #   cmake -S . -B build && cmake --build build && ctest --test-dir build
 # Values the including side can set (defaults to this repo's third_party/):
 #   MKAUDIO_MINIAUDIO_DIR   folder containing miniaudio.h
@@ -13,7 +13,7 @@ if(NOT MKAUDIO_STB_DIR)
     set(MKAUDIO_STB_DIR ${CMAKE_CURRENT_SOURCE_DIR}/third_party/stb)
 endif()
 option(MKAUDIO_BUILD_TESTS "Build mkaudio tests" ${PROJECT_IS_TOP_LEVEL})
-option(MKAUDIO_BUILD_TOOL "Build the MealKitAudio authoring tool (SDL3 + Dear ImGui)" ${PROJECT_IS_TOP_LEVEL})
+option(MKAUDIO_BUILD_TOOL "Build the MkAudio authoring tool (SDL3 + Dear ImGui)" ${PROJECT_IS_TOP_LEVEL})
 
 add_library(mkaudio STATIC
     include/mkaudio/Mixer.h

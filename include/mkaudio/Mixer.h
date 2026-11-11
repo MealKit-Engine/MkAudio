@@ -8,7 +8,7 @@
 #include <string_view>
 #include <vector>
 
-// mkaudio: sound event runtime (MealKit Audio, https://github.com/MealKit-Engine/MealKit-Audio, MIT).
+// mkaudio: sound event runtime (MkAudio, https://github.com/MealKit-Engine/MkAudio, MIT).
 // Puts FMOD/Wwise-style events on top of miniaudio: plays by event name + parameters, and the runtime handles clip selection (random/switch/blend containers),
 // random volume/pitch, parameter curves (volume/pitch/lowpass), 3D attenuation, buses, concurrency limits/stealing, cooldowns, same-frame grouping,
 // and voice management (cap on actually mixed voices, inaudible loops become virtual voices).

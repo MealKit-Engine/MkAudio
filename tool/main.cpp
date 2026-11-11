@@ -1,6 +1,6 @@
-// MealKit Audio executable: SDL3 window + SDL_Renderer + Dear ImGui (docking). The actual screen is App.
-//   MealKitAudio [--project <MealKit project folder>] [--select <event>] [--frames N --capture <png>]
-//   MealKitAudio --golden --project <folder> [--update] [--event <name>]   golden render tests of the project's events without a window
+// MkAudio executable: SDL3 window + SDL_Renderer + Dear ImGui (docking). The actual screen is App.
+//   MkAudio [--project <MealKit project folder>] [--select <event>] [--frames N --capture <png>]
+//   MkAudio --golden --project <folder> [--update] [--event <name>]   golden render tests of the project's events without a window
 //     (<project>/tests/audio/<event>.golden, mkaudio/Golden.h): "GOLDEN ok|new|updated|FAIL <event> ...", exit code 1 on a failure
 #include "App.h"
 #include "mkaudio/Golden.h"
@@ -123,7 +123,7 @@ int main(int argc, char** argv) {
         else if (std::strcmp(argv[i], "--update") == 0) update = true;
         else if (std::strcmp(argv[i], "--event") == 0 && i + 1 < argc) onlyEvent = argv[++i];
         else if (std::strcmp(argv[i], "--version") == 0) {
-            SDL_Log("MealKit Audio %s", MKAUDIO_VERSION);
+            SDL_Log("MkAudio %s", MKAUDIO_VERSION);
             return 0;
         }
     }
@@ -140,7 +140,7 @@ int main(int argc, char** argv) {
         return 1;
     }
     const float scale = SDL_GetDisplayContentScale(SDL_GetPrimaryDisplay());
-    SDL_Window* window = SDL_CreateWindow("MealKit Audio", static_cast<int>(1400 * scale), static_cast<int>(860 * scale),
+    SDL_Window* window = SDL_CreateWindow("MkAudio", static_cast<int>(1400 * scale), static_cast<int>(860 * scale),
                                           SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIGH_PIXEL_DENSITY | SDL_WINDOW_HIDDEN);
     SDL_Renderer* renderer = window ? SDL_CreateRenderer(window, nullptr) : nullptr;
     if (!renderer) {
@@ -157,7 +157,7 @@ int main(int argc, char** argv) {
     io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard | ImGuiConfigFlags_DockingEnable;
     // Window layout goes in the user folder (not left in the project)
     static std::string ini;
-    if (char* pref = SDL_GetPrefPath("MealKit", "MealKit Audio")) {
+    if (char* pref = SDL_GetPrefPath("MealKit", "MealKit Audio") /* kept: settings folder from before the MkAudio rename */) {
         ini = std::string(pref) + "imgui.ini";
         SDL_free(pref);
         io.IniFilename = ini.c_str();

@@ -2,8 +2,8 @@
 
 // Offline-render golden tests for events: an event is played alone (2D, fixed seed, its parameters at their defaults) on a mixer without a
 // device, and its loudness over time is kept as text. A later render is compared with tolerance, so changing a clip, a curve or a bus
-// shows up as a failed check while float noise between compilers/OSes does not. The MealKit Audio tool runs them for a project
-// (MealKitAudio --golden --project <folder> [--update]: <project>/tests/audio/<event>.golden).
+// shows up as a failed check while float noise between compilers/OSes does not. The MkAudio tool runs them for a project
+// (MkAudio --golden --project <folder> [--update]: <project>/tests/audio/<event>.golden).
 //
 //   @format audio-golden 1
 //   event hit

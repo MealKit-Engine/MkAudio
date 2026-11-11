@@ -1,4 +1,4 @@
-# MealKit Audio authoring tool (MealKitAudio): SDL3 window + Dear ImGui (docking) + the mkaudio runtime. Build output goes to <build folder>/bin/
+# MkAudio authoring tool (MkAudio): SDL3 window + Dear ImGui (docking) + the mkaudio runtime. Build output goes to <build folder>/bin/
 # with the executable and the manifest mealkit-tool.txt together → put that folder in %LOCALAPPDATA%\MealKit\tools\audio\, or
 # open the MealKit editor with --tool-path <build folder>/bin and it appears in the [Tools] menu. cmake --install makes the same folder shape.
 
@@ -22,17 +22,17 @@ target_link_libraries(mkaudio_imgui PUBLIC SDL3::SDL3-static)
 set(MKCONTRACT_BUILD_TESTS OFF)
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/../third_party/mkcontract ${CMAKE_CURRENT_BINARY_DIR}/mkcontract)
 
-add_executable(MealKitAudio WIN32 main.cpp App.h App.cpp)
-target_link_libraries(MealKitAudio PRIVATE mkaudio mkaudio_imgui mkcontract_client SDL3::SDL3-static)
+add_executable(MkAudio WIN32 main.cpp App.h App.cpp)
+target_link_libraries(MkAudio PRIVATE mkaudio mkaudio_imgui mkcontract_client SDL3::SDL3-static)
 if(MSVC)
-    target_compile_options(MealKitAudio PRIVATE /W4 /permissive- /utf-8)
+    target_compile_options(MkAudio PRIVATE /W4 /permissive- /utf-8)
 else()
-    target_compile_options(MealKitAudio PRIVATE -Wall -Wextra)
+    target_compile_options(MkAudio PRIVATE -Wall -Wextra)
 endif()
-set_target_properties(MealKitAudio PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
+set_target_properties(MkAudio PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 foreach(config Debug Release RelWithDebInfo MinSizeRel)
     string(TOUPPER ${config} upper)
-    set_target_properties(MealKitAudio PROPERTIES RUNTIME_OUTPUT_DIRECTORY_${upper} ${CMAKE_BINARY_DIR}/bin)
+    set_target_properties(MkAudio PROPERTIES RUNTIME_OUTPUT_DIRECTORY_${upper} ${CMAKE_BINARY_DIR}/bin)
 endforeach()
 
 # Manifest (version from project(mkaudio VERSION ...)). exe is written without an extension, .exe is appended on Windows
@@ -40,9 +40,9 @@ set(MKAUDIO_VERSION ${PROJECT_VERSION})
 configure_file(mealkit-tool.txt ${CMAKE_BINARY_DIR}/bin/mealkit-tool.txt @ONLY)
 if(WIN32)
     file(READ ${CMAKE_BINARY_DIR}/bin/mealkit-tool.txt manifest)
-    string(REPLACE "exe MealKitAudio\n" "exe MealKitAudio.exe\n" manifest "${manifest}")
+    string(REPLACE "exe MkAudio\n" "exe MkAudio.exe\n" manifest "${manifest}")
     file(WRITE ${CMAKE_BINARY_DIR}/bin/mealkit-tool.txt "${manifest}")
 endif()
 
-install(TARGETS MealKitAudio RUNTIME DESTINATION .)
+install(TARGETS MkAudio RUNTIME DESTINATION .)
 install(FILES ${CMAKE_BINARY_DIR}/bin/mealkit-tool.txt DESTINATION .)

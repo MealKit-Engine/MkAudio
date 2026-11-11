@@ -13,7 +13,7 @@
 #include <string>
 #include <vector>
 
-// MealKit Audio: authoring tool for sound designers. Edits the project's assets/sounds.events (read by the game as is),
+// MkAudio: authoring tool for sound designers. Edits the project's assets/sounds.events (read by the game as is),
 // previews with the runtime (mkaudio::Mixer), and plays in a running game/editor and watches state over the live connection.
 namespace mkaudio::tool {
 

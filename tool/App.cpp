@@ -114,9 +114,9 @@ bool App::init(const std::string& projectDir) {
 void App::shutdown() { m_mixer.shutdown(); }
 
 std::string App::title() const {
-    if (m_project.empty()) return "MealKit Audio";
+    if (m_project.empty()) return "MkAudio";
     const bool dirty = writeEvents(m_file) != m_savedText;
-    return std::string(dirty ? "* " : "") + utf8Of(pathOf(m_project).filename()) + " - MealKit Audio";
+    return std::string(dirty ? "* " : "") + utf8Of(pathOf(m_project).filename()) + " - MkAudio";
 }
 
 void App::setPendingProject(const std::string& dir) {
@@ -379,7 +379,7 @@ void App::drawStart() {
     const ImGuiViewport* vp = ImGui::GetMainViewport();
     ImGui::SetNextWindowPos(ImVec2(vp->WorkPos.x + vp->WorkSize.x * 0.5f, vp->WorkPos.y + vp->WorkSize.y * 0.4f), ImGuiCond_Always, ImVec2(0.5f, 0.5f));
     ImGui::Begin("##start", nullptr, ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoSavedSettings);
-    ImGui::TextUnformatted("MealKit Audio");
+    ImGui::TextUnformatted("MkAudio");
     ImGui::TextDisabled("Sound events for a MealKit project (assets/sounds.events)");
     ImGui::Spacing();
     if (ImGui::Button("Open Project Folder...", ImVec2(260, 0)))
@@ -388,7 +388,7 @@ void App::drawStart() {
                 if (list && list[0]) static_cast<App*>(user)->setPendingProject(list[0]);
             },
             this, static_cast<SDL_Window*>(window), nullptr, false);
-    ImGui::TextDisabled("The MealKit editor opens this tool from Tools > MealKit Audio.");
+    ImGui::TextDisabled("The MealKit editor opens this tool from Tools > MkAudio.");
     if (!m_status.empty()) ImGui::TextDisabled("%s", m_status.c_str());
     ImGui::End();
 }

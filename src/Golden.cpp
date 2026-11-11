@@ -94,7 +94,7 @@ bool renderEnvelope(const EventFile& file, const std::string& event, Envelope& o
 }
 
 std::string writeEnvelope(const Envelope& envelope) {
-    std::string out = "# Golden render of a sound event (mkaudio/Golden.h). Rewrite with MealKitAudio --golden --update\n";
+    std::string out = "# Golden render of a sound event (mkaudio/Golden.h). Rewrite with MkAudio --golden --update\n";
     out += "@format audio-golden 1\n";
     out += "event " + envelope.event + "\n";
     out += "rate " + std::to_string(envelope.sampleRate) + "\n";
