@@ -46,3 +46,7 @@ endif()
 
 install(TARGETS MkAudio RUNTIME DESTINATION .)
 install(FILES ${CMAKE_BINARY_DIR}/bin/mealkit-tool.txt DESTINATION .)
+
+if(WIN32)
+    target_sources(MkAudio PRIVATE res/MkAudio.rc) # app icon (engine docs/TOOL_DESIGN.md section 5)
+endif()
