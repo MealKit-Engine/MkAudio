@@ -24,6 +24,9 @@ add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/../third_party/mkcontract ${CMAKE_C
 
 add_executable(MkAudio WIN32 main.cpp App.h App.cpp)
 target_link_libraries(MkAudio PRIVATE mkaudio mkaudio_imgui mkcontract_client SDL3::SDL3-static)
+if(WIN32)
+    target_link_libraries(MkAudio PRIVATE dwmapi) # editor-colored title bar
+endif()
 if(MSVC)
     target_compile_options(MkAudio PRIVATE /W4 /permissive- /utf-8)
 else()

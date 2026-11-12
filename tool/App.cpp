@@ -17,6 +17,14 @@ namespace {
 constexpr const char* kEventsFile = "sounds.events"; // relative to assets
 constexpr const char* kOldTable = "sounds.table";    // MealKit engine 0.5 format (loaded and migrated)
 constexpr size_t kUndoDepth = 200;
+// Glyphs from engine docs/TOOL_DESIGN.md section 2 (Segoe Fluent Icons / MDL2 Assets)
+constexpr const char* kIconAdd = "\xEE\x9C\x90";    // U+E710
+constexpr const char* kIconRemove = "\xEE\x9C\xB8"; // U+E738 remove from a list
+constexpr const char* kIconCopy = "\xEE\xA3\x88";   // U+E8C8
+constexpr const char* kIconUp = "\xEE\x9D\x8A";     // U+E74A move up
+constexpr const char* kIconPlay = "\xEE\x9D\xA8";   // U+E768
+constexpr const char* kIconStop = "\xEE\x9C\x9A";   // U+E71A
+constexpr const char* kIconLaunch = "\xEE\xA2\xA7"; // U+E8A7 open in its program
 const char* const kStandardBuses[] = {"master", "music", "sfx", "ui", "voice"}; // buses the runtime creates from the start
 
 std::filesystem::path pathOf(const std::string& utf8) { return std::filesystem::path(std::u8string(utf8.begin(), utf8.end())); }
@@ -282,6 +290,19 @@ void App::undo(bool redo) {
 
 // ---------------------------------------------------------------- Every frame
 
+bool App::iconButton(const char* glyph, const char* name, bool small) {
+    const std::string label = std::string(iconFont ? glyph : name) + "##" + name;
+    // Flat like the editor's icon buttons: clear until hovered
+    if (iconFont) {
+        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0, 0, 0, 0));
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImGui::GetStyleColorVec4(ImGuiCol_FrameBgHovered));
+    }
+    const bool pressed = small ? ImGui::SmallButton(label.c_str()) : iconFont ? ImGui::Button(label.c_str(), {ImGui::GetFrameHeight(), 0}) : ImGui::Button(label.c_str());
+    if (iconFont) ImGui::PopStyleColor(2);
+    if (iconFont && ImGui::IsItemHovered(ImGuiHoveredFlags_ForTooltip | ImGuiHoveredFlags_AllowWhenDisabled)) ImGui::SetTooltip("%s", name);
+    return pressed;
+}
+
 void App::frame(double dt) {
     m_time += dt;
     {
@@ -399,7 +420,7 @@ void App::drawEventList() {
     ImGui::Begin("Events");
     ImGui::SetNextItemWidth(-FLT_MIN);
     ImGui::InputTextWithHint("##filter", "Filter", m_filter, sizeof(m_filter));
-    if (ImGui::Button("+ Event")) {
+    if (iconButton(kIconAdd, "New event")) {
         EventDef e;
         int n = 1;
         do e.name = "event" + std::to_string(n++);
@@ -410,14 +431,14 @@ void App::drawEventList() {
     ImGui::SameLine();
     const bool has = m_selected >= 0 && m_selected < static_cast<int>(m_file.events.size());
     ImGui::BeginDisabled(!has);
-    if (ImGui::Button("Duplicate")) {
+    if (iconButton(kIconCopy, "Duplicate event")) {
         EventDef e = m_file.events[static_cast<size_t>(m_selected)];
         e.name += "_copy";
         m_file.events.insert(m_file.events.begin() + m_selected + 1, e);
         ++m_selected;
     }
     ImGui::SameLine();
-    if (ImGui::Button("Delete")) {
+    if (iconButton(kIconRemove, "Delete event")) {
         m_file.events.erase(m_file.events.begin() + m_selected);
         m_selected = std::min(m_selected, static_cast<int>(m_file.events.size()) - 1);
     }
@@ -494,10 +515,10 @@ void App::drawEventEditor() {
     for (size_t i = 0; i < e.clips.size(); ++i) {
         ImGui::PushID(static_cast<int>(i));
         const bool missing = resolveClip(e.clips[i].name).empty();
-        if (ImGui::SmallButton("x")) removeAt = static_cast<int>(i);
+        if (iconButton(kIconRemove, "Remove", true)) removeAt = static_cast<int>(i);
         ImGui::SameLine();
         ImGui::BeginDisabled(i == 0);
-        if (ImGui::SmallButton("^")) moveUp = static_cast<int>(i);
+        if (iconButton(kIconUp, "Move up", true)) moveUp = static_cast<int>(i);
         ImGui::EndDisabled();
         ImGui::SameLine();
         if (missing) ImGui::TextColored(ImVec4(1.0f, 0.55f, 0.45f, 1.0f), "%zu  %s (missing)", i, e.clips[i].name.c_str());
@@ -717,7 +738,7 @@ void App::drawBuses() {
             ImGui::PushID(static_cast<int>(i));
             ImGui::TableNextRow();
             ImGui::TableNextColumn();
-            if (ImGui::SmallButton("x")) removeAt = static_cast<int>(i);
+            if (iconButton(kIconRemove, "Remove", true)) removeAt = static_cast<int>(i);
             ImGui::SameLine();
             ImGui::TextUnformatted(b.name.c_str());
             ImGui::TableNextColumn();
@@ -772,7 +793,7 @@ void App::drawBuses() {
     ImGui::SameLine();
     const bool exists = std::any_of(m_file.buses.begin(), m_file.buses.end(), [&](const BusDef& b) { return b.name == name; });
     ImGui::BeginDisabled(!validName(name) || exists);
-    if (ImGui::Button("+ Bus")) {
+    if (iconButton(kIconAdd, "Add bus")) {
         BusDef b;
         b.name = name;
         m_file.buses.push_back(b);
@@ -798,13 +819,15 @@ void App::drawPreview() {
         m_param = e->paramMin;
     }
     ImGui::BeginDisabled(!e);
-    if (ImGui::Button("Play  (double-click an event)", ImVec2(-FLT_MIN, 0)) && e) {
+    if (iconButton(kIconPlay, "Play  (or double-click an event)") && e) {
         m_preview = m_mixer.play(e->name, {0, 0, m_distance}, {{e->param.c_str(), m_param}});
         m_mixer.setOcclusion(m_preview, m_occlusion);
     }
     ImGui::EndDisabled();
-    if (ImGui::Button("Stop", ImVec2(-FLT_MIN, 0))) m_mixer.stop(m_preview, 0.1f);
-    if (ImGui::Button("Stop all")) m_mixer.stopAll();
+    ImGui::SameLine();
+    if (iconButton(kIconStop, "Stop")) m_mixer.stop(m_preview, 0.1f);
+    ImGui::SameLine();
+    if (ImGui::Button("Stop all")) m_mixer.stopAll(); // no glyph of its own: words (engine docs/TOOL_DESIGN.md section 1)
     if (e && !e->param.empty()) {
         const float lo = std::min(e->paramMin, e->paramMax), hi = std::max(e->paramMin, e->paramMax);
         ImGui::SetNextItemWidth(-120);
@@ -834,7 +857,7 @@ void App::drawPreview() {
 void App::drawMusic() {
     dockWithEvent();
     ImGui::Begin("Music");
-    if (ImGui::Button("+ Track")) {
+    if (iconButton(kIconAdd, "New music track")) {
         MusicDef d;
         int n = 1;
         do d.name = "track" + std::to_string(n++);
@@ -845,7 +868,7 @@ void App::drawMusic() {
     ImGui::SameLine();
     const bool has = m_musicSelected >= 0 && m_musicSelected < static_cast<int>(m_file.music.size());
     ImGui::BeginDisabled(!has);
-    if (ImGui::Button("Delete##track")) {
+    if (iconButton(kIconRemove, "Delete music track")) {
         m_file.music.erase(m_file.music.begin() + m_musicSelected);
         m_musicSelected = std::min(m_musicSelected, static_cast<int>(m_file.music.size()) - 1);
     }
@@ -875,7 +898,7 @@ void App::drawMusic() {
     int removeAt = -1;
     for (size_t i = 0; i < d.stems.size(); ++i) {
         ImGui::PushID(static_cast<int>(i));
-        if (ImGui::SmallButton("x")) removeAt = static_cast<int>(i);
+        if (iconButton(kIconRemove, "Remove", true)) removeAt = static_cast<int>(i);
         ImGui::SameLine();
         const bool missing = resolveClip(d.stems[i].name).empty();
         if (missing) ImGui::TextColored(ImVec4(1.0f, 0.55f, 0.45f, 1.0f), "%zu  %s (missing)", i, d.stems[i].name.c_str());
@@ -933,9 +956,9 @@ void App::drawMusic() {
 
     if (m_audio) {
         ImGui::SeparatorText("Preview");
-        if (ImGui::Button("Play")) m_mixer.playMusic(d.name);
+        if (iconButton(kIconPlay, "Play track")) m_mixer.playMusic(d.name);
         ImGui::SameLine();
-        if (ImGui::Button("Stop##music")) m_mixer.stopMusic(0.5f);
+        if (iconButton(kIconStop, "Stop music")) m_mixer.stopMusic(0.5f);
         const MusicInfo info = m_mixer.music();
         ImGui::SameLine();
         if (info.track.empty()) ImGui::TextDisabled("not playing");
@@ -981,7 +1004,7 @@ void App::drawMix() {
             ImGui::ProgressBar(weight, ImVec2(80, 0), "");
             ImGui::SameLine();
         }
-        if (ImGui::SmallButton("delete")) removeAt = static_cast<int>(i);
+        if (iconButton(kIconRemove, "Delete snapshot", true)) removeAt = static_cast<int>(i);
         if (open) {
             const int index = static_cast<int>(i);
             if (nameField("Name##snap", s.name, m_snapRename, sizeof(m_snapRename), m_snapRenaming, index,
@@ -996,7 +1019,7 @@ void App::drawMix() {
             for (size_t k = 0; k < s.buses.size(); ++k) {
                 SnapshotBus& sb = s.buses[k];
                 ImGui::PushID(static_cast<int>(k));
-                if (ImGui::SmallButton("x")) removeBus = static_cast<int>(k);
+                if (iconButton(kIconRemove, "Remove bus value", true)) removeBus = static_cast<int>(k);
                 ImGui::SameLine();
                 ImGui::SetNextItemWidth(110);
                 busCombo("##bus", sb.bus, m_file, false);
@@ -1009,13 +1032,13 @@ void App::drawMix() {
                 ImGui::PopID();
             }
             if (removeBus >= 0) s.buses.erase(s.buses.begin() + removeBus);
-            if (ImGui::SmallButton("+ bus value")) s.buses.push_back({"music", 1.0f, 0.0f});
+            if (iconButton(kIconAdd, "Add bus value", true)) s.buses.push_back({"music", 1.0f, 0.0f});
             ImGui::TreePop();
         }
         ImGui::PopID();
     }
     if (removeAt >= 0) m_file.snapshots.erase(m_file.snapshots.begin() + removeAt);
-    if (ImGui::Button("+ Snapshot")) {
+    if (iconButton(kIconAdd, "New snapshot")) {
         SnapshotDef s;
         int n = 1;
         do s.name = "snapshot" + std::to_string(n++);
@@ -1106,7 +1129,7 @@ void App::drawLive() {
     const EventDef* e = (m_selected >= 0 && m_selected < static_cast<int>(m_file.events.size())) ? &m_file.events[static_cast<size_t>(m_selected)] : nullptr;
     const bool dirty = writeEvents(m_file) != m_savedText;
     ImGui::BeginDisabled(!e);
-    if (ImGui::Button("Play in game") && e) {
+    if (iconButton(kIconLaunch, "Play in game") && e) {
         if (dirty) save(); // the game hears the saved file
         playInGame(*e);
     }

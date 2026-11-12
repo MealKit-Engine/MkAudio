@@ -39,8 +39,11 @@ public:
     void setPendingProject(const std::string& dir);
     void select(const std::string& event); // selects the event with this name (command line --select)
     void* window = nullptr; // SDL_Window* (dialog parent)
+    bool iconFont = false;  // the Segoe icon font merged into the UI font (main.cpp loadFont)
 
 private:
+    // Flat square icon button with its name in the tooltip (engine docs/TOOL_DESIGN.md section 1); the name as the label without the icon font
+    bool iconButton(const char* glyph, const char* name, bool small = false);
     // Project/file
     bool openProject(const std::string& dir);
     std::string assetsDir() const;
