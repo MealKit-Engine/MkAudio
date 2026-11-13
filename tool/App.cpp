@@ -1,10 +1,14 @@
 #include "App.h"
+#include "Strings.h"
+
+#include <mkcontract/User.h>
 
 #include <SDL3/SDL.h>
 #include <imgui.h>
 #include <imgui_internal.h>
 
 #include <algorithm>
+#include <cstring>
 #include <cmath>
 #include <cstdio>
 #include <fstream>
@@ -25,7 +29,76 @@ constexpr const char* kIconUp = "\xEE\x9D\x8A";     // U+E74A move up
 constexpr const char* kIconPlay = "\xEE\x9D\xA8";   // U+E768
 constexpr const char* kIconStop = "\xEE\x9C\x9A";   // U+E71A
 constexpr const char* kIconLaunch = "\xEE\xA2\xA7"; // U+E8A7 open in its program
+// Panel tabs (engine docs/TOOL_DESIGN.md section 2 "Panels")
+constexpr const char* kIconAudio = "\xEE\xA3\x96";     // U+E8D6 Events
+constexpr const char* kIconInspector = "\xEE\xA7\xA9"; // U+E9E9 Event
+constexpr const char* kIconLayers = "\xEE\xA0\x9E";    // U+E81E MapLayers: Buses
+constexpr const char* kIconPreview = "\xEE\x9F\xB4";   // U+E7F4
+constexpr const char* kIconMusic = "\xEE\xB1\x8F";     // U+EC4F MusicNote
+constexpr const char* kIconVolume = "\xEE\x9D\xA7";    // U+E767 Mix
+constexpr const char* kIconConnect = "\xEE\x9C\x83";   // U+E703 Live
+constexpr const char* kIconLanguage = "\xEF\x8A\xB7";  // U+F2B7 LocaleLanguage
 const char* const kStandardBuses[] = {"master", "music", "sfx", "ui", "voice"}; // buses the runtime creates from the start
+
+// Checkbox and radio colors (engine docs/TOOL_DESIGN.md 3.1, 3.2): a gray 4 box on a gray 2 panel is about 1.25:1, so an unchecked
+// box gets a gray 9 outline (gray 11 hovered) and a checked one the accent fill with a gray 12 mark. Same as MkRender tool/App.cpp
+const ImVec4 kControlOutline(0x8A / 255.0f, 0x8A / 255.0f, 0x8A / 255.0f, 1.0f);      // gray 9
+const ImVec4 kControlOutlineHover(0xAF / 255.0f, 0xAF / 255.0f, 0xAF / 255.0f, 1.0f); // gray 11
+const ImVec4 kControlMark(0xEB / 255.0f, 0xEB / 255.0f, 0xEB / 255.0f, 1.0f);         // gray 12
+const ImVec4 kAccent(0x3B / 255.0f, 0x63 / 255.0f, 0xFB / 255.0f, 1.0f);
+const ImVec4 kAccentHover(0x4B / 255.0f, 0x75 / 255.0f, 0xFF / 255.0f, 1.0f);
+const ImVec4 kAccentDown(0x27 / 255.0f, 0x4D / 255.0f, 0xEA / 255.0f, 1.0f);
+
+// Pushes the fill and mark of a checkbox or radio button in the state it is drawn in; popControlColors after
+void pushControlColors(bool on) {
+    const ImVec4 clear(0.0f, 0.0f, 0.0f, 0.0f);
+    const ImGuiStyle& s = ImGui::GetStyle();
+    ImGui::PushStyleColor(ImGuiCol_FrameBg, on ? kAccent : clear);
+    ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, on ? kAccentHover : s.Colors[ImGuiCol_FrameBg]);
+    ImGui::PushStyleColor(ImGuiCol_FrameBgActive, on ? kAccentDown : s.Colors[ImGuiCol_FrameBgHovered]);
+    ImGui::PushStyleColor(ImGuiCol_CheckMark, kControlMark);
+    ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, s.FrameRounding * 0.5f); // a 4 px box, not the round 8 px of fields
+}
+
+void popControlColors() {
+    ImGui::PopStyleVar();
+    ImGui::PopStyleColor(4);
+}
+
+// Every checkbox goes through here, never ImGui::Checkbox (engine docs/TOOL_DESIGN.md 3.2)
+bool checkbox(const char* label, bool* v) {
+    const bool on = *v;
+    pushControlColors(on);
+    const bool changed = ImGui::Checkbox(label, v);
+    const float rounding = ImGui::GetStyle().FrameRounding;
+    popControlColors();
+    if (!on) {
+        // The box is the square at the start of the item (ImGui::Checkbox check_bb)
+        const ImVec2 p = ImGui::GetItemRectMin();
+        const float size = ImGui::GetFrameHeight();
+        const float width = std::max(1.0f, ImGui::GetStyle().FontScaleDpi);
+        const float inset = width * 0.5f;
+        ImGui::GetWindowDrawList()->AddRect({p.x + inset, p.y + inset}, {p.x + size - inset, p.y + size - inset},
+                                            ImGui::GetColorU32(ImGui::IsItemHovered() ? kControlOutlineHover : kControlOutline), rounding, 0, width);
+    }
+    return changed;
+}
+
+bool radioButton(const char* label, bool active) {
+    pushControlColors(active);
+    const bool pressed = ImGui::RadioButton(label, active);
+    popControlColors();
+    if (!active) {
+        // Same circle as ImGui::RadioButton: radius (square - 1) / 2 around the square's center
+        const ImVec2 p = ImGui::GetItemRectMin();
+        const float size = ImGui::GetFrameHeight();
+        const float width = std::max(1.0f, ImGui::GetStyle().FontScaleDpi);
+        const ImVec2 center(std::floor(p.x + size * 0.5f + 0.5f), std::floor(p.y + size * 0.5f + 0.5f));
+        ImGui::GetWindowDrawList()->AddCircle(center, (size - 1.0f) * 0.5f - width * 0.5f,
+                                              ImGui::GetColorU32(ImGui::IsItemHovered() ? kControlOutlineHover : kControlOutline), 0, width);
+    }
+    return pressed;
+}
 
 std::filesystem::path pathOf(const std::string& utf8) { return std::filesystem::path(std::u8string(utf8.begin(), utf8.end())); }
 
@@ -110,11 +183,13 @@ bool knownBus(const EventFile& f, const std::string& name) {
 bool App::init(const std::string& projectDir) {
     Desc d;
     d.log = [this](LogLevel, const std::string& text) {
-        m_status = "Audio: " + text;
+        m_status = trf("Audio: %s", text.c_str());
         m_statusTime = m_time;
     };
+    loadLanguage();
+    if (!languageOverride.empty()) setLanguage(languageOverride);
     m_audio = m_mixer.init(d);
-    if (!m_audio) m_status = "No audio output device: preview is off";
+    if (!m_audio) m_status = tr("No audio output device: preview is off");
     if (!projectDir.empty()) openProject(projectDir);
     return true;
 }
@@ -141,7 +216,7 @@ bool App::openProject(const std::string& dir) {
     const std::filesystem::path root = pathOf(dir);
     std::error_code ec;
     if (!std::filesystem::is_directory(root / "assets", ec)) {
-        m_status = "Not a MealKit project (no assets folder): " + dir;
+        m_status = trf("Not a MealKit project (no assets folder): %s", dir.c_str());
         m_statusTime = m_time;
         return false;
     }
@@ -189,12 +264,12 @@ bool App::load() {
         m_file = {};
         m_savedText = writeEvents(m_file);
         m_fileTime = {};
-        m_status = "No assets/sounds.events yet: add events and save to create it";
+        m_status = tr("No assets/sounds.events yet: add events and save to create it");
     } else {
         loadEventFile(eventsPath(), m_file, &m_messages);
         m_savedText = writeEvents(m_file);
         m_fileTime = std::filesystem::last_write_time(path, ec);
-        m_status = "Loaded assets/sounds.events: " + std::to_string(m_file.events.size()) + " event(s)";
+        m_status = trf("Loaded assets/sounds.events: %d event(s)", static_cast<int>(m_file.events.size()));
     }
     m_statusTime = m_time;
     m_lastSnapshot = m_savedText;
@@ -207,7 +282,7 @@ bool App::load() {
 bool App::save() {
     if (m_project.empty()) return false;
     if (!saveEventFile(eventsPath(), m_file)) {
-        m_status = "Cannot write " + eventsPath();
+        m_status = trf("Cannot write %s", eventsPath().c_str());
         m_statusTime = m_time;
         return false;
     }
@@ -215,7 +290,7 @@ bool App::save() {
     m_savedText = writeEvents(m_file);
     m_fileTime = std::filesystem::last_write_time(pathOf(eventsPath()), ec);
     m_externalChange = false;
-    m_status = "Saved assets/sounds.events";
+    m_status = tr("Saved assets/sounds.events");
     m_statusTime = m_time;
     reloadInGames(); // running games/editors also reread by file time, but are notified so changes are heard right away
     return true;
@@ -239,7 +314,7 @@ void App::importTable() {
     parseEvents(converted, imported, &m_messages);
     m_file.events = imported.events;
     m_selected = m_file.events.empty() ? -1 : 0;
-    m_status = "Imported " + std::to_string(m_file.events.size()) + " event(s) from assets/sounds.table - save to write sounds.events";
+    m_status = trf("Imported %d event(s) from assets/sounds.table: save to write sounds.events", static_cast<int>(m_file.events.size()));
     m_statusTime = m_time;
 }
 
@@ -316,6 +391,7 @@ void App::frame(double dt) {
     if (m_audio) m_mixer.update(dt);
     checkExternalChange();
     refreshLive(false);
+    if (languageOverride.empty()) followLanguage(); // MealKit Manager or another Mk tool changed the suite language
 
     const ImGuiIO& io = ImGui::GetIO();
     if (!m_project.empty() && io.KeyCtrl && !io.WantTextInput) {
@@ -345,7 +421,8 @@ void App::frame(double dt) {
 
 void App::layoutDocks(unsigned dockspace) {
     m_layoutDone = true;
-    if (ImGui::DockBuilderGetNode(dockspace) && ImGui::DockBuilderGetNode(dockspace)->IsSplitNode()) return; // imgui.ini has a layout
+    if (ImGui::DockBuilderGetNode(dockspace) && ImGui::DockBuilderGetNode(dockspace)->IsSplitNode() && ImGui::FindWindowSettingsByID(ImHashStr("###Events")))
+        return; // imgui.ini has a layout (one saved before the ### panel ids is laid out again)
     ImGui::DockBuilderRemoveNode(dockspace);
     ImGui::DockBuilderAddNode(dockspace, ImGuiDockNodeFlags_DockSpace);
     ImGui::DockBuilderSetNodeSize(dockspace, ImGui::GetMainViewport()->WorkSize);
@@ -353,63 +430,89 @@ void App::layoutDocks(unsigned dockspace) {
     ImGui::DockBuilderSplitNode(dockspace, ImGuiDir_Left, 0.22f, &left, &center);
     ImGui::DockBuilderSplitNode(center, ImGuiDir_Right, 0.36f, &right, &center);
     ImGui::DockBuilderSplitNode(right, ImGuiDir_Down, 0.45f, &rightBottom, &right);
-    ImGui::DockBuilderDockWindow("Events", left);
-    ImGui::DockBuilderDockWindow("Event", center);
-    ImGui::DockBuilderDockWindow("Music", center);
-    ImGui::DockBuilderDockWindow("Mix", center);
-    ImGui::DockBuilderDockWindow("Preview", right);
-    ImGui::DockBuilderDockWindow("Buses", rightBottom);
-    ImGui::DockBuilderDockWindow("Live", rightBottom);
+    ImGui::DockBuilderDockWindow("###Events", left);
+    ImGui::DockBuilderDockWindow("###Event", center);
+    ImGui::DockBuilderDockWindow("###Music", center);
+    ImGui::DockBuilderDockWindow("###Mix", center);
+    ImGui::DockBuilderDockWindow("###Preview", right);
+    ImGui::DockBuilderDockWindow("###Buses", rightBottom);
+    ImGui::DockBuilderDockWindow("###Live", rightBottom);
     ImGui::DockBuilderFinish(dockspace);
 }
 
 void App::drawMenu() {
     if (!ImGui::BeginMainMenuBar()) return;
-    if (ImGui::BeginMenu("File")) {
-        if (ImGui::MenuItem("Open Project Folder...")) {
+    if (ImGui::BeginMenu(tr("File"))) {
+        if (ImGui::MenuItem(tr("Open Project Folder..."))) {
             SDL_ShowOpenFolderDialog(
                 [](void* user, const char* const* list, int) {
                     if (list && list[0]) static_cast<App*>(user)->setPendingProject(list[0]);
                 },
                 this, static_cast<SDL_Window*>(window), m_project.empty() ? nullptr : m_project.c_str(), false);
         }
-        if (ImGui::MenuItem("Save", "Ctrl+S", false, !m_project.empty())) save();
-        if (ImGui::MenuItem("Reload from Disk", nullptr, false, !m_project.empty())) load();
+        if (ImGui::MenuItem(tr("Save"), "Ctrl+S", false, !m_project.empty())) save();
+        if (ImGui::MenuItem(tr("Reload from Disk"), nullptr, false, !m_project.empty())) load();
         std::error_code ec;
         const bool hasTable = !m_project.empty() && std::filesystem::exists(pathOf(m_project) / "assets" / kOldTable, ec);
-        if (ImGui::MenuItem("Import assets/sounds.table", nullptr, false, hasTable)) importTable();
+        if (ImGui::MenuItem(tr("Import assets/sounds.table"), nullptr, false, hasTable)) importTable();
         ImGui::Separator();
-        if (ImGui::MenuItem("Quit")) requestQuit();
+        if (ImGui::MenuItem(tr("Quit"))) requestQuit();
         ImGui::EndMenu();
     }
-    if (ImGui::BeginMenu("Edit", !m_project.empty())) {
-        if (ImGui::MenuItem("Undo", "Ctrl+Z", false, !m_undo.empty())) undo(false);
-        if (ImGui::MenuItem("Redo", "Ctrl+Y", false, !m_redo.empty())) undo(true);
+    if (ImGui::BeginMenu(tr("Edit"), !m_project.empty())) {
+        if (ImGui::MenuItem(tr("Undo"), "Ctrl+Z", false, !m_undo.empty())) undo(false);
+        if (ImGui::MenuItem(tr("Redo"), "Ctrl+Y", false, !m_redo.empty())) undo(true);
         ImGui::Separator();
-        if (ImGui::MenuItem("Rescan Clips")) scanClips();
+        if (ImGui::MenuItem(tr("Rescan Clips"))) scanClips();
         ImGui::EndMenu();
     }
     if (!m_status.empty() && m_time - m_statusTime < 8.0) {
         ImGui::SameLine(ImGui::GetWindowWidth() * 0.45f);
         ImGui::TextDisabled("%s", m_status.c_str());
     }
+    drawLanguageButton();
     ImGui::EndMainMenuBar();
+}
+
+void App::drawLanguageButton() {
+    // The name in English too while another language is on, so someone who can't read it still knows the button
+    const std::string name = std::strcmp(language(), "en") == 0 ? std::string("Language") : std::string(tr("Language")) + " (Language)";
+    ImGui::SameLine();
+    ImGui::SetCursorPosX(ImGui::GetWindowContentRegionMax().x - ImGui::GetFrameHeight()); // the right end, inside the padding
+    if (iconButton(kIconLanguage, name.c_str())) ImGui::OpenPopup("##language");
+    if (ImGui::BeginPopup("##language")) {
+        for (const Language& l : kLanguages) {
+            if (ImGui::MenuItem(l.name, nullptr, std::strcmp(language(), l.code) == 0)) {
+                languageOverride.clear();
+                if (!saveLanguage(l.code)) {
+                    setLanguage(l.code);
+                    m_status = trf("Cannot save the language to %s", mkcontract::userPath(mkcontract::kEditorSettings).c_str());
+                    m_statusTime = m_time;
+                }
+            }
+        }
+        ImGui::EndPopup();
+    }
+}
+
+std::string App::panelTitle(const char* glyph, const char* name) const {
+    return (iconFont ? std::string(glyph) + "  " : std::string()) + tr(name) + "###" + name;
 }
 
 void App::drawStart() {
     const ImGuiViewport* vp = ImGui::GetMainViewport();
     ImGui::SetNextWindowPos(ImVec2(vp->WorkPos.x + vp->WorkSize.x * 0.5f, vp->WorkPos.y + vp->WorkSize.y * 0.4f), ImGuiCond_Always, ImVec2(0.5f, 0.5f));
     ImGui::Begin("##start", nullptr, ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoSavedSettings);
-    ImGui::TextUnformatted("MkAudio");
-    ImGui::TextDisabled("Sound events for a MealKit project (assets/sounds.events)");
+    ImGui::TextUnformatted(tr("MkAudio"));
+    ImGui::TextDisabled(tr("Sound events for a MealKit project (assets/sounds.events)"));
     ImGui::Spacing();
-    if (ImGui::Button("Open Project Folder...", ImVec2(260, 0)))
+    if (ImGui::Button(tr("Open Project Folder..."), ImVec2(260, 0)))
         SDL_ShowOpenFolderDialog(
             [](void* user, const char* const* list, int) {
                 if (list && list[0]) static_cast<App*>(user)->setPendingProject(list[0]);
             },
             this, static_cast<SDL_Window*>(window), nullptr, false);
-    ImGui::TextDisabled("The MealKit editor opens this tool from Tools > MkAudio.");
+    ImGui::TextDisabled(tr("The MealKit editor opens this tool from Tools > MkAudio."));
     if (!m_status.empty()) ImGui::TextDisabled("%s", m_status.c_str());
     ImGui::End();
 }
@@ -417,10 +520,10 @@ void App::drawStart() {
 // ---------------------------------------------------------------- Event list
 
 void App::drawEventList() {
-    ImGui::Begin("Events");
+    ImGui::Begin(panelTitle(kIconAudio, "Events").c_str());
     ImGui::SetNextItemWidth(-FLT_MIN);
-    ImGui::InputTextWithHint("##filter", "Filter", m_filter, sizeof(m_filter));
-    if (iconButton(kIconAdd, "New event")) {
+    ImGui::InputTextWithHint("##filter", tr("Filter"), m_filter, sizeof(m_filter));
+    if (iconButton(kIconAdd, tr("New event"))) {
         EventDef e;
         int n = 1;
         do e.name = "event" + std::to_string(n++);
@@ -431,22 +534,22 @@ void App::drawEventList() {
     ImGui::SameLine();
     const bool has = m_selected >= 0 && m_selected < static_cast<int>(m_file.events.size());
     ImGui::BeginDisabled(!has);
-    if (iconButton(kIconCopy, "Duplicate event")) {
+    if (iconButton(kIconCopy, tr("Duplicate event"))) {
         EventDef e = m_file.events[static_cast<size_t>(m_selected)];
         e.name += "_copy";
         m_file.events.insert(m_file.events.begin() + m_selected + 1, e);
         ++m_selected;
     }
     ImGui::SameLine();
-    if (iconButton(kIconRemove, "Delete event")) {
+    if (iconButton(kIconRemove, tr("Delete event"))) {
         m_file.events.erase(m_file.events.begin() + m_selected);
         m_selected = std::min(m_selected, static_cast<int>(m_file.events.size()) - 1);
     }
     ImGui::EndDisabled();
     ImGui::Separator();
     if (m_externalChange) {
-        ImGui::TextColored(ImVec4(1.0f, 0.75f, 0.3f, 1.0f), "sounds.events changed on disk");
-        if (ImGui::SmallButton("Reload (lose my changes)")) load();
+        ImGui::TextColored(ImVec4(1.0f, 0.75f, 0.3f, 1.0f), tr("sounds.events changed on disk"));
+        if (ImGui::SmallButton(tr("Reload (lose my changes)"))) load();
         ImGui::Separator();
     }
     ImGui::BeginChild("##list");
@@ -471,12 +574,12 @@ void App::drawEventList() {
 // ---------------------------------------------------------------- Event editing
 
 void App::drawEventEditor() {
-    ImGui::Begin("Event");
+    ImGui::Begin(panelTitle(kIconInspector, "Event").c_str());
     if (m_selected < 0 || m_selected >= static_cast<int>(m_file.events.size())) {
-        ImGui::TextDisabled("Select or add an event.");
+        ImGui::TextDisabled(tr("Select or add an event."));
         if (!m_messages.empty()) {
-            ImGui::SeparatorText("While reading sounds.events");
-            for (const ParseMessage& m : m_messages) ImGui::TextDisabled("line %u: %s%s", m.line, m.error ? "error: " : "", m.text.c_str());
+            ImGui::SeparatorText(tr("While reading sounds.events"));
+            for (const ParseMessage& m : m_messages) ImGui::TextDisabled(tr("line %u: %s%s"), m.line, m.error ? tr("error: ") : "", m.text.c_str());
         }
         ImGui::End();
         return;
@@ -489,110 +592,111 @@ void App::drawEventEditor() {
         m_renaming = m_selected;
     }
     ImGui::SetNextItemWidth(260);
-    if (ImGui::InputText("Name", m_rename, sizeof(m_rename), ImGuiInputTextFlags_EnterReturnsTrue) || ImGui::IsItemDeactivatedAfterEdit()) {
+    if (ImGui::InputText(tr("Name"), m_rename, sizeof(m_rename), ImGuiInputTextFlags_EnterReturnsTrue) || ImGui::IsItemDeactivatedAfterEdit()) {
         const std::string name = m_rename;
         const bool taken = std::any_of(m_file.events.begin(), m_file.events.end(), [&](const EventDef& o) { return &o != &e && o.name == name; });
         if (validName(name) && !taken) e.name = name;
         else {
-            m_status = taken ? "Name already used: " + name : "Names use letters, digits, _ - . only";
+            m_status = taken ? trf("Name already used: %s", name.c_str()) : std::string(tr("Names use letters, digits, _ - . only"));
             m_statusTime = m_time;
             std::snprintf(m_rename, sizeof(m_rename), "%s", e.name.c_str());
         }
     }
     ImGui::SameLine();
-    ImGui::TextDisabled("game code: play(\"%s\")", e.name.c_str());
+    ImGui::TextDisabled(tr("game code: play(\"%s\")"), e.name.c_str());
 
     // ---- Clips
-    ImGui::SeparatorText("Clips");
+    ImGui::SeparatorText(tr("Clips"));
     int container = static_cast<int>(e.container);
     ImGui::SetNextItemWidth(160);
-    if (ImGui::Combo("Container", &container, "random\0switch\0blend\0")) e.container = static_cast<Container>(container);
+    const char* containers[] = {tr("random"), tr("switch"), tr("blend")};
+    if (ImGui::Combo(tr("Container"), &container, containers, 3)) e.container = static_cast<Container>(container);
     ImGui::SameLine();
-    ImGui::TextDisabled(e.container == Container::Random   ? "one clip at random, never the same twice"
-                        : e.container == Container::Switch ? "the parameter picks clip 0, 1, 2..."
-                                                           : "all clips crossfaded along the parameter");
+    ImGui::TextDisabled(e.container == Container::Random   ? tr("one clip at random, never the same twice")
+                        : e.container == Container::Switch ? tr("the parameter picks clip 0, 1, 2...")
+                                                           : tr("all clips crossfaded along the parameter"));
     int removeAt = -1, moveUp = -1;
     for (size_t i = 0; i < e.clips.size(); ++i) {
         ImGui::PushID(static_cast<int>(i));
         const bool missing = resolveClip(e.clips[i].name).empty();
-        if (iconButton(kIconRemove, "Remove", true)) removeAt = static_cast<int>(i);
+        if (iconButton(kIconRemove, tr("Remove"), true)) removeAt = static_cast<int>(i);
         ImGui::SameLine();
         ImGui::BeginDisabled(i == 0);
-        if (iconButton(kIconUp, "Move up", true)) moveUp = static_cast<int>(i);
+        if (iconButton(kIconUp, tr("Move up"), true)) moveUp = static_cast<int>(i);
         ImGui::EndDisabled();
         ImGui::SameLine();
-        if (missing) ImGui::TextColored(ImVec4(1.0f, 0.55f, 0.45f, 1.0f), "%zu  %s (missing)", i, e.clips[i].name.c_str());
-        else ImGui::Text("%zu  %s", i, e.clips[i].name.c_str());
+        if (missing) ImGui::TextColored(ImVec4(1.0f, 0.55f, 0.45f, 1.0f), tr("%zu  %s (missing)"), i, e.clips[i].name.c_str());
+        else ImGui::Text(tr("%zu  %s"), i, e.clips[i].name.c_str());
         ImGui::PopID();
     }
     if (removeAt >= 0) e.clips.erase(e.clips.begin() + removeAt);
     if (moveUp > 0) std::swap(e.clips[static_cast<size_t>(moveUp)], e.clips[static_cast<size_t>(moveUp) - 1]);
     ImGui::SetNextItemWidth(320);
-    if (ImGui::BeginCombo("##addclip", "+ Add clip from assets/", ImGuiComboFlags_HeightLarge)) {
+    if (ImGui::BeginCombo("##addclip", tr("+ Add clip from assets/"), ImGuiComboFlags_HeightLarge)) {
         static char clipFilter[64] = {};
-        ImGui::InputTextWithHint("##cf", "Filter", clipFilter, sizeof(clipFilter));
+        ImGui::InputTextWithHint("##cf", tr("Filter"), clipFilter, sizeof(clipFilter));
         for (const std::string& f : m_clipFiles) {
             if (clipFilter[0] && f.find(clipFilter) == std::string::npos) continue;
             if (ImGui::Selectable(f.c_str())) e.clips.push_back({f, {}});
         }
-        if (m_clipFiles.empty()) ImGui::TextDisabled("No .wav or .ogg files under assets/");
+        if (m_clipFiles.empty()) ImGui::TextDisabled(tr("No .wav or .ogg files under assets/"));
         ImGui::EndCombo();
     }
 
     // ---- Volume/pitch
-    ImGui::SeparatorText("Volume and pitch");
+    ImGui::SeparatorText(tr("Volume and pitch"));
     ImGui::SetNextItemWidth(200);
-    ImGui::SliderFloat("Volume", &e.volume, 0.0f, 2.0f, "%.2f");
+    ImGui::SliderFloat(tr("Volume"), &e.volume, 0.0f, 2.0f, "%.2f");
     ImGui::SameLine();
     ImGui::SetNextItemWidth(140);
-    ImGui::SliderFloat("+/- random##v", &e.volumeRandom, 0.0f, 0.5f, "%.2f");
+    ImGui::SliderFloat((std::string(tr("+/- random")) + "##v").c_str(), &e.volumeRandom, 0.0f, 0.5f, "%.2f");
     ImGui::SetNextItemWidth(200);
-    ImGui::SliderFloat("Pitch", &e.pitch, 0.25f, 4.0f, "%.2f", ImGuiSliderFlags_Logarithmic);
+    ImGui::SliderFloat(tr("Pitch"), &e.pitch, 0.25f, 4.0f, "%.2f", ImGuiSliderFlags_Logarithmic);
     ImGui::SameLine();
     ImGui::SetNextItemWidth(140);
-    ImGui::SliderFloat("+/- random##p", &e.pitchRandom, 0.0f, 0.5f, "%.2f");
+    ImGui::SliderFloat((std::string(tr("+/- random")) + "##p").c_str(), &e.pitchRandom, 0.0f, 0.5f, "%.2f");
 
     // ---- Parameters and curves
-    ImGui::SeparatorText("Parameter");
+    ImGui::SeparatorText(tr("Parameter"));
     char param[64];
     std::snprintf(param, sizeof(param), "%s", e.param.c_str());
     ImGui::SetNextItemWidth(160);
-    if (ImGui::InputText("Name##param", param, sizeof(param))) e.param = param;
+    if (ImGui::InputText((std::string(tr("Name")) + "##param").c_str(), param, sizeof(param))) e.param = param;
     ImGui::SameLine();
     ImGui::SetNextItemWidth(160);
-    ImGui::DragFloatRange2("Range", &e.paramMin, &e.paramMax, 0.05f);
+    ImGui::DragFloatRange2(tr("Range"), &e.paramMin, &e.paramMax, 0.05f);
     const float lo = std::min(e.paramMin, e.paramMax), hi = std::max(e.paramMin, e.paramMax);
     const float t = (e.param.empty() || hi == lo) ? 0.0f : std::clamp((m_param - e.paramMin) / (e.paramMax - e.paramMin), 0.0f, 1.0f);
     if (e.param.empty()) {
-        ImGui::TextDisabled("No parameter: the curves below are not used. Game code passes it as {{\"name\", value}}.");
+        ImGui::TextDisabled(tr("No parameter: the curves below are not used. Game code passes it as {{\"name\", value}}."));
     } else {
-        ImGui::Text("Volume curve (%.2f -> %.2f)", e.volumeAtMin, e.volumeAtMax);
+        ImGui::Text(tr("Volume curve (%.2f -> %.2f)"), e.volumeAtMin, e.volumeAtMax);
         curveEditor("vol", e.volumeAtMin, e.volumeAtMax, 0.0f, 2.0f, t, "%.2f");
-        ImGui::Text("Pitch curve (%.2f -> %.2f)", e.pitchAtMin, e.pitchAtMax);
+        ImGui::Text(tr("Pitch curve (%.2f -> %.2f)"), e.pitchAtMin, e.pitchAtMax);
         curveEditor("pitch", e.pitchAtMin, e.pitchAtMax, 0.25f, 2.0f, t, "%.2f");
-        ImGui::Text("Low-pass curve (%.0f -> %.0f Hz, 0 = off)", e.lowpassAtMin, e.lowpassAtMax);
+        ImGui::Text(tr("Low-pass curve (%.0f -> %.0f Hz, 0 = off)"), e.lowpassAtMin, e.lowpassAtMax);
         curveEditor("lpf", e.lowpassAtMin, e.lowpassAtMax, 0.0f, 20000.0f, t, "%.0f Hz");
     }
 
     // ---- 3D
     ImGui::SeparatorText("3D");
-    ImGui::Checkbox("Positioned in the world", &e.spatial);
+    checkbox(tr("Positioned in the world"), &e.spatial);
     if (e.spatial) {
         ImGui::SetNextItemWidth(260);
-        ImGui::DragFloatRange2("Distance (full, silent)", &e.minDistance, &e.maxDistance, 0.1f, 0.0f, 1000.0f, "%.1f m", "%.1f m");
+        ImGui::DragFloatRange2(tr("Distance (full, silent)"), &e.minDistance, &e.maxDistance, 0.1f, 0.0f, 1000.0f, "%.1f m", "%.1f m");
         attenuationPlot(e.minDistance, e.maxDistance, m_distance);
         ImGui::SetNextItemWidth(200);
-        ImGui::SliderFloat("Behind a wall: volume", &e.occlusionVolume, 0.0f, 1.0f, "%.2f");
+        ImGui::SliderFloat(tr("Behind a wall: volume"), &e.occlusionVolume, 0.0f, 1.0f, "%.2f");
         ImGui::SameLine();
         ImGui::SetNextItemWidth(160);
-        ImGui::SliderFloat("low-pass", &e.occlusionLowpass, 0.0f, 20000.0f, e.occlusionLowpass > 0.0f ? "%.0f Hz" : "off", ImGuiSliderFlags_Logarithmic);
-        ImGui::TextDisabled("The game checks a line from the listener to the sound; fully blocked uses these values.");
+        ImGui::SliderFloat(tr("low-pass"), &e.occlusionLowpass, 0.0f, 20000.0f, e.occlusionLowpass > 0.0f ? tr("%.0f Hz") : tr("off"), ImGuiSliderFlags_Logarithmic);
+        ImGui::TextDisabled(tr("The game checks a line from the listener to the sound; fully blocked uses these values."));
     }
 
     // ---- Playback
-    ImGui::SeparatorText("Playback");
+    ImGui::SeparatorText(tr("Playback"));
     ImGui::SetNextItemWidth(160);
-    if (ImGui::BeginCombo("Bus", e.bus.c_str())) {
+    if (ImGui::BeginCombo(tr("Bus"), e.bus.c_str())) {
         for (const char* b : kStandardBuses)
             if (std::string(b) != "master" && ImGui::Selectable(b, e.bus == b)) e.bus = b;
         for (const BusDef& b : m_file.buses)
@@ -601,38 +705,39 @@ void App::drawEventEditor() {
     }
     if (!knownBus(m_file, e.bus)) {
         ImGui::SameLine();
-        ImGui::TextColored(ImVec4(1.0f, 0.75f, 0.3f, 1.0f), "not defined (made under master)");
+        ImGui::TextColored(ImVec4(1.0f, 0.75f, 0.3f, 1.0f), tr("not defined (made under master)"));
     }
-    ImGui::Checkbox("Loop", &e.loop);
+    checkbox(tr("Loop"), &e.loop);
     ImGui::SameLine();
-    ImGui::Checkbox("Stream from disk (music)", &e.stream);
+    checkbox(tr("Stream from disk (music)"), &e.stream);
     int priority = static_cast<int>(e.priority), maxInstances = static_cast<int>(e.maxInstances);
     ImGui::SetNextItemWidth(160);
-    if (ImGui::SliderInt("Priority", &priority, 0, 100)) e.priority = static_cast<uint32_t>(priority);
+    if (ImGui::SliderInt(tr("Priority"), &priority, 0, 100)) e.priority = static_cast<uint32_t>(priority);
     ImGui::SetNextItemWidth(160);
-    if (ImGui::SliderInt("Max at once", &maxInstances, 1, 32)) e.maxInstances = static_cast<uint32_t>(maxInstances);
+    if (ImGui::SliderInt(tr("Max at once"), &maxInstances, 1, 32)) e.maxInstances = static_cast<uint32_t>(maxInstances);
     ImGui::SameLine();
     int steal = static_cast<int>(e.steal);
     ImGui::SetNextItemWidth(120);
-    if (ImGui::Combo("When full", &steal, "stop oldest\0stop quietest\0don't play\0")) e.steal = static_cast<Steal>(steal);
+    const char* steals[] = {tr("stop oldest"), tr("stop quietest"), tr("don't play")};
+    if (ImGui::Combo(tr("When full"), &steal, steals, 3)) e.steal = static_cast<Steal>(steal);
     ImGui::SetNextItemWidth(160);
-    ImGui::DragFloat("Cooldown", &e.cooldown, 0.01f, 0.0f, 60.0f, "%.2f s");
+    ImGui::DragFloat(tr("Cooldown"), &e.cooldown, 0.01f, 0.0f, 60.0f, "%.2f s");
 
     // ---- Subtitles
-    ImGui::SeparatorText("Subtitle");
+    ImGui::SeparatorText(tr("Subtitle"));
     char subtitle[96];
     std::snprintf(subtitle, sizeof(subtitle), "%s", e.subtitle.c_str());
     ImGui::SetNextItemWidth(220);
-    if (ImGui::InputTextWithHint("String key", "e.g. sub.door", subtitle, sizeof(subtitle))) e.subtitle = subtitle;
+    if (ImGui::InputTextWithHint(tr("String key"), tr("e.g. sub.door"), subtitle, sizeof(subtitle))) e.subtitle = subtitle;
     if (!e.subtitle.empty()) {
         ImGui::SameLine();
         ImGui::SetNextItemWidth(120);
-        ImGui::DragFloat("Shown for", &e.subtitleSeconds, 0.05f, 0.2f, 30.0f, "%.1f s");
+        ImGui::DragFloat(tr("Shown for"), &e.subtitleSeconds, 0.05f, 0.2f, 30.0f, "%.1f s");
     }
 
     if (!m_messages.empty()) {
-        ImGui::SeparatorText("While reading sounds.events");
-        for (const ParseMessage& m : m_messages) ImGui::TextDisabled("line %u: %s%s", m.line, m.error ? "error: " : "", m.text.c_str());
+        ImGui::SeparatorText(tr("While reading sounds.events"));
+        for (const ParseMessage& m : m_messages) ImGui::TextDisabled(tr("line %u: %s%s"), m.line, m.error ? tr("error: ") : "", m.text.c_str());
     }
     ImGui::End();
 }
@@ -654,15 +759,15 @@ bool nameField(const char* label, std::string& name, char* buf, size_t size, int
         name = next;
         return true;
     }
-    status = taken(next) ? "Name already used: " + next : "Names use letters, digits, _ - . only";
+    status = taken(next) ? trf("Name already used: %s", next.c_str()) : std::string(tr("Names use letters, digits, _ - . only"));
     std::snprintf(buf, size, "%s", name.c_str());
     return false;
 }
 
 bool busCombo(const char* label, std::string& bus, const EventFile& file, bool allowNone) {
     bool changed = false;
-    if (ImGui::BeginCombo(label, bus.empty() ? "(none)" : bus.c_str())) {
-        if (allowNone && ImGui::Selectable("(none)", bus.empty())) {
+    if (ImGui::BeginCombo(label, bus.empty() ? tr("(none)") : bus.c_str())) {
+        if (allowNone && ImGui::Selectable(tr("(none)"), bus.empty())) {
             bus.clear();
             changed = true;
         }
@@ -692,7 +797,7 @@ void dockWithEvent() {
 // ---------------------------------------------------------------- Buses
 
 void App::drawBuses() {
-    ImGui::Begin("Buses");
+    ImGui::Begin(panelTitle(kIconLayers, "Buses").c_str());
     std::vector<BusInfo> live;
     if (m_audio) m_mixer.buses(live);
     auto peakOf = [&](const std::string& name) {
@@ -707,11 +812,11 @@ void App::drawBuses() {
         return BusInfo{};
     };
     if (ImGui::BeginTable("##buses", 5, ImGuiTableFlags_RowBg | ImGuiTableFlags_SizingStretchProp)) {
-        ImGui::TableSetupColumn("Bus");
-        ImGui::TableSetupColumn("Parent");
-        ImGui::TableSetupColumn("Mix volume");
-        ImGui::TableSetupColumn("Level");
-        ImGui::TableSetupColumn("Effects");
+        ImGui::TableSetupColumn(tr("Bus"));
+        ImGui::TableSetupColumn(tr("Parent"));
+        ImGui::TableSetupColumn(tr("Mix volume"));
+        ImGui::TableSetupColumn(tr("Level"));
+        ImGui::TableSetupColumn(tr("Effects"));
         ImGui::TableHeadersRow();
         auto meter = [&](const std::string& name) {
             const float p = peakOf(name);
@@ -738,7 +843,7 @@ void App::drawBuses() {
             ImGui::PushID(static_cast<int>(i));
             ImGui::TableNextRow();
             ImGui::TableNextColumn();
-            if (iconButton(kIconRemove, "Remove", true)) removeAt = static_cast<int>(i);
+            if (iconButton(kIconRemove, tr("Remove"), true)) removeAt = static_cast<int>(i);
             ImGui::SameLine();
             ImGui::TextUnformatted(b.name.c_str());
             ImGui::TableNextColumn();
@@ -766,19 +871,19 @@ void App::drawBuses() {
             if (!b.duckBy.empty()) summary += (summary.empty() ? "" : ", ") + std::string("ducked by ") + b.duckBy;
             const BusInfo now = infoOf(b.name);
             if (now.duck < 0.999f) summary += " (now " + std::to_string(static_cast<int>(now.duck * 100.0f + 0.5f)) + "%)";
-            if (ImGui::SmallButton(summary.empty() ? "none..." : (summary + "...").c_str())) ImGui::OpenPopup("fx");
+            if (ImGui::SmallButton(summary.empty() ? tr("none...") : (summary + "...").c_str())) ImGui::OpenPopup("fx");
             if (ImGui::BeginPopup("fx")) {
-                ImGui::Checkbox("Reverb (amount from reverb zones)", &b.reverb);
+                checkbox(tr("Reverb (amount from reverb zones)"), &b.reverb);
                 ImGui::SetNextItemWidth(140);
-                busCombo("Ducked by", b.duckBy, m_file, true);
+                busCombo(tr("Ducked by"), b.duckBy, m_file, true);
                 if (b.duckBy == b.name) b.duckBy.clear();
                 if (!b.duckBy.empty()) {
                     ImGui::SetNextItemWidth(160);
-                    ImGui::SliderFloat("Down to", &b.duckVolume, 0.0f, 1.0f, "%.2f");
+                    ImGui::SliderFloat(tr("Down to"), &b.duckVolume, 0.0f, 1.0f, "%.2f");
                     ImGui::SetNextItemWidth(160);
-                    ImGui::DragFloat("Attack", &b.duckAttack, 0.005f, 0.0f, 5.0f, "%.2f s");
+                    ImGui::DragFloat(tr("Attack"), &b.duckAttack, 0.005f, 0.0f, 5.0f, "%.2f s");
                     ImGui::SetNextItemWidth(160);
-                    ImGui::DragFloat("Release", &b.duckRelease, 0.005f, 0.0f, 10.0f, "%.2f s");
+                    ImGui::DragFloat(tr("Release"), &b.duckRelease, 0.005f, 0.0f, 10.0f, "%.2f s");
                 }
                 ImGui::EndPopup();
             }
@@ -789,27 +894,27 @@ void App::drawBuses() {
     if (removeAt >= 0) m_file.buses.erase(m_file.buses.begin() + removeAt);
     static char name[48] = {};
     ImGui::SetNextItemWidth(160);
-    ImGui::InputTextWithHint("##newbus", "bus name", name, sizeof(name));
+    ImGui::InputTextWithHint("##newbus", tr("bus name"), name, sizeof(name));
     ImGui::SameLine();
     const bool exists = std::any_of(m_file.buses.begin(), m_file.buses.end(), [&](const BusDef& b) { return b.name == name; });
     ImGui::BeginDisabled(!validName(name) || exists);
-    if (iconButton(kIconAdd, "Add bus")) {
+    if (iconButton(kIconAdd, tr("Add bus"))) {
         BusDef b;
         b.name = name;
         m_file.buses.push_back(b);
         name[0] = 0;
     }
     ImGui::EndDisabled();
-    ImGui::TextDisabled("Standard buses can be added by name to change their mix volume or parent.");
+    ImGui::TextDisabled(tr("Standard buses can be added by name to change their mix volume or parent."));
     ImGui::End();
 }
 
 // ---------------------------------------------------------------- Preview
 
 void App::drawPreview() {
-    ImGui::Begin("Preview");
+    ImGui::Begin(panelTitle(kIconPreview, "Preview").c_str());
     if (!m_audio) {
-        ImGui::TextDisabled("No audio output device.");
+        ImGui::TextDisabled(tr("No audio output device."));
         ImGui::End();
         return;
     }
@@ -819,33 +924,33 @@ void App::drawPreview() {
         m_param = e->paramMin;
     }
     ImGui::BeginDisabled(!e);
-    if (iconButton(kIconPlay, "Play  (or double-click an event)") && e) {
+    if (iconButton(kIconPlay, tr("Play  (or double-click an event)")) && e) {
         m_preview = m_mixer.play(e->name, {0, 0, m_distance}, {{e->param.c_str(), m_param}});
         m_mixer.setOcclusion(m_preview, m_occlusion);
     }
     ImGui::EndDisabled();
     ImGui::SameLine();
-    if (iconButton(kIconStop, "Stop")) m_mixer.stop(m_preview, 0.1f);
+    if (iconButton(kIconStop, tr("Stop"))) m_mixer.stop(m_preview, 0.1f);
     ImGui::SameLine();
-    if (ImGui::Button("Stop all")) m_mixer.stopAll(); // no glyph of its own: words (engine docs/TOOL_DESIGN.md section 1)
+    if (ImGui::Button(tr("Stop all"))) m_mixer.stopAll(); // no glyph of its own: words (engine docs/TOOL_DESIGN.md section 1)
     if (e && !e->param.empty()) {
         const float lo = std::min(e->paramMin, e->paramMax), hi = std::max(e->paramMin, e->paramMax);
         ImGui::SetNextItemWidth(-120);
         if (ImGui::SliderFloat(e->param.c_str(), &m_param, lo, hi)) m_mixer.setParam(m_preview, e->param, m_param);
     }
     ImGui::SetNextItemWidth(-120);
-    if (ImGui::SliderFloat("Distance", &m_distance, 0.0f, 100.0f, "%.1f m")) m_mixer.setPosition(m_preview, {0, 0, m_distance});
+    if (ImGui::SliderFloat(tr("Distance"), &m_distance, 0.0f, 100.0f, "%.1f m")) m_mixer.setPosition(m_preview, {0, 0, m_distance});
     ImGui::SetNextItemWidth(-120);
-    if (ImGui::SliderFloat("Occlusion", &m_occlusion, 0.0f, 1.0f, "%.2f")) m_mixer.setOcclusion(m_preview, m_occlusion);
+    if (ImGui::SliderFloat(tr("Occlusion"), &m_occlusion, 0.0f, 1.0f, "%.2f")) m_mixer.setOcclusion(m_preview, m_occlusion);
 
     const Stats& st = m_mixer.stats();
-    ImGui::SeparatorText("Voices");
-    ImGui::TextDisabled("%u mixed, %u virtual, %.3f ms", st.realVoices, st.virtualVoices, st.updateMs);
+    ImGui::SeparatorText(tr("Voices"));
+    ImGui::TextDisabled(tr("%u mixed, %u virtual, %.3f ms"), st.realVoices, st.virtualVoices, st.updateMs);
     std::vector<VoiceInfo> voices;
     m_mixer.voices(voices);
     for (const VoiceInfo& v : voices)
-        ImGui::Text("%s%s  %.2f  %.1f m", v.event.c_str(), v.virtualVoice ? " (virtual)" : v.loop ? " (loop)" : "", v.audibility, v.distance);
-    ImGui::SeparatorText("Culled (newest first)");
+        ImGui::Text("%s%s  %.2f  %.1f m", v.event.c_str(), v.virtualVoice ? tr(" (virtual)") : v.loop ? tr(" (loop)") : "", v.audibility, v.distance);
+    ImGui::SeparatorText(tr("Culled (newest first)"));
     const auto& culls = m_mixer.culls();
     int shown = 0;
     for (auto it = culls.rbegin(); it != culls.rend() && shown < 12; ++it, ++shown) ImGui::TextDisabled("%s  %s", it->event.c_str(), it->reason);
@@ -856,8 +961,8 @@ void App::drawPreview() {
 
 void App::drawMusic() {
     dockWithEvent();
-    ImGui::Begin("Music");
-    if (iconButton(kIconAdd, "New music track")) {
+    ImGui::Begin(panelTitle(kIconMusic, "Music").c_str());
+    if (iconButton(kIconAdd, tr("New music track"))) {
         MusicDef d;
         int n = 1;
         do d.name = "track" + std::to_string(n++);
@@ -868,7 +973,7 @@ void App::drawMusic() {
     ImGui::SameLine();
     const bool has = m_musicSelected >= 0 && m_musicSelected < static_cast<int>(m_file.music.size());
     ImGui::BeginDisabled(!has);
-    if (iconButton(kIconRemove, "Delete music track")) {
+    if (iconButton(kIconRemove, tr("Delete music track"))) {
         m_file.music.erase(m_file.music.begin() + m_musicSelected);
         m_musicSelected = std::min(m_musicSelected, static_cast<int>(m_file.music.size()) - 1);
     }
@@ -881,35 +986,35 @@ void App::drawMusic() {
     ImGui::SameLine();
     ImGui::BeginChild("##track");
     if (m_musicSelected < 0 || m_musicSelected >= static_cast<int>(m_file.music.size())) {
-        ImGui::TextDisabled("Add a track. Game code: ctx.audio.playMusic(\"name\").");
+        ImGui::TextDisabled(tr("Add a track. Game code: ctx.audio.playMusic(\"name\")."));
         ImGui::EndChild();
         ImGui::End();
         return;
     }
     MusicDef& d = m_file.music[static_cast<size_t>(m_musicSelected)];
-    if (nameField("Name##music", d.name, m_musicRename, sizeof(m_musicRename), m_musicRenaming, m_musicSelected,
+    if (nameField((std::string(tr("Name")) + "##music").c_str(), d.name, m_musicRename, sizeof(m_musicRename), m_musicRenaming, m_musicSelected,
                   [&](const std::string& n) { return std::any_of(m_file.music.begin(), m_file.music.end(), [&](const MusicDef& o) { return &o != &d && o.name == n; }); },
                   m_status))
         m_statusTime = m_time;
     ImGui::SameLine();
-    ImGui::TextDisabled("game code: playMusic(\"%s\")", d.name.c_str());
+    ImGui::TextDisabled(tr("game code: playMusic(\"%s\")"), d.name.c_str());
 
-    ImGui::SeparatorText("Stems (same length, played together)");
+    ImGui::SeparatorText(tr("Stems (same length, played together)"));
     int removeAt = -1;
     for (size_t i = 0; i < d.stems.size(); ++i) {
         ImGui::PushID(static_cast<int>(i));
-        if (iconButton(kIconRemove, "Remove", true)) removeAt = static_cast<int>(i);
+        if (iconButton(kIconRemove, tr("Remove"), true)) removeAt = static_cast<int>(i);
         ImGui::SameLine();
         const bool missing = resolveClip(d.stems[i].name).empty();
-        if (missing) ImGui::TextColored(ImVec4(1.0f, 0.55f, 0.45f, 1.0f), "%zu  %s (missing)", i, d.stems[i].name.c_str());
-        else ImGui::Text("%zu  %s%s", i, d.stems[i].name.c_str(), i == 0 ? "  (always on)" : "");
+        if (missing) ImGui::TextColored(ImVec4(1.0f, 0.55f, 0.45f, 1.0f), tr("%zu  %s (missing)"), i, d.stems[i].name.c_str());
+        else ImGui::Text(tr("%zu  %s%s"), i, d.stems[i].name.c_str(), i == 0 ? tr("  (always on)") : "");
         ImGui::PopID();
     }
     if (removeAt >= 0) d.stems.erase(d.stems.begin() + removeAt);
     ImGui::SetNextItemWidth(320);
-    if (ImGui::BeginCombo("##addstem", "+ Add stem from assets/", ImGuiComboFlags_HeightLarge)) {
+    if (ImGui::BeginCombo("##addstem", tr("+ Add stem from assets/"), ImGuiComboFlags_HeightLarge)) {
         static char stemFilter[64] = {};
-        ImGui::InputTextWithHint("##sf", "Filter", stemFilter, sizeof(stemFilter));
+        ImGui::InputTextWithHint("##sf", tr("Filter"), stemFilter, sizeof(stemFilter));
         for (const std::string& f : m_clipFiles) {
             if (stemFilter[0] && f.find(stemFilter) == std::string::npos) continue;
             if (ImGui::Selectable(f.c_str())) d.stems.push_back({f, {}});
@@ -917,52 +1022,53 @@ void App::drawMusic() {
         ImGui::EndCombo();
     }
 
-    ImGui::SeparatorText("Timing");
+    ImGui::SeparatorText(tr("Timing"));
     ImGui::SetNextItemWidth(120);
-    ImGui::DragFloat("BPM", &d.bpm, 0.5f, 20.0f, 400.0f, "%.1f");
+    ImGui::DragFloat(tr("BPM"), &d.bpm, 0.5f, 20.0f, 400.0f, "%.1f");
     d.bpm = std::max(d.bpm, 1.0f);
     ImGui::SameLine();
     int beats = static_cast<int>(d.beatsPerBar);
     ImGui::SetNextItemWidth(100);
-    if (ImGui::SliderInt("Beats per bar", &beats, 1, 12)) d.beatsPerBar = static_cast<uint32_t>(beats);
+    if (ImGui::SliderInt(tr("Beats per bar"), &beats, 1, 12)) d.beatsPerBar = static_cast<uint32_t>(beats);
     ImGui::SetNextItemWidth(120);
-    ImGui::DragFloat("Pickup before beat 1", &d.offset, 0.005f, 0.0f, 10.0f, "%.3f s");
+    ImGui::DragFloat(tr("Pickup before beat 1"), &d.offset, 0.005f, 0.0f, 10.0f, "%.3f s");
     int transition = static_cast<int>(d.transition);
     ImGui::SetNextItemWidth(120);
-    if (ImGui::Combo("Switch to this at", &transition, "once (right away)\0next beat\0next bar\0")) d.transition = static_cast<Quantize>(transition);
+    const char* transitions[] = {tr("once (right away)"), tr("next beat"), tr("next bar")};
+    if (ImGui::Combo(tr("Switch to this at"), &transition, transitions, 3)) d.transition = static_cast<Quantize>(transition);
     ImGui::SameLine();
     ImGui::SetNextItemWidth(100);
-    ImGui::DragFloat("Crossfade", &d.crossfade, 0.005f, 0.0f, 4.0f, "%.2f s");
+    ImGui::DragFloat(tr("Crossfade"), &d.crossfade, 0.005f, 0.0f, 4.0f, "%.2f s");
 
-    ImGui::SeparatorText("Stem parameter");
+    ImGui::SeparatorText(tr("Stem parameter"));
     char param[64];
     std::snprintf(param, sizeof(param), "%s", d.stemParam.c_str());
     ImGui::SetNextItemWidth(160);
-    if (ImGui::InputTextWithHint("Name##stemparam", "e.g. tension", param, sizeof(param))) d.stemParam = param;
+    if (ImGui::InputTextWithHint((std::string(tr("Name")) + "##stemparam").c_str(), tr("e.g. tension"), param, sizeof(param))) d.stemParam = param;
     ImGui::SameLine();
     ImGui::SetNextItemWidth(160);
-    ImGui::DragFloatRange2("Range##stem", &d.paramMin, &d.paramMax, 0.05f);
+    ImGui::DragFloatRange2((std::string(tr("Range")) + "##stem").c_str(), &d.paramMin, &d.paramMax, 0.05f);
     ImGui::SetNextItemWidth(120);
-    ImGui::DragFloat("Stem fade", &d.stemFade, 0.01f, 0.0f, 10.0f, "%.2f s");
-    if (d.stemParam.empty()) ImGui::TextDisabled("No parameter: every stem plays. With one, stems after the first come in one by one as it rises.");
+    ImGui::DragFloat(tr("Stem fade"), &d.stemFade, 0.01f, 0.0f, 10.0f, "%.2f s");
+    if (d.stemParam.empty()) ImGui::TextDisabled(tr("No parameter: every stem plays. With one, stems after the first come in one by one as it rises."));
 
-    ImGui::SeparatorText("Output");
+    ImGui::SeparatorText(tr("Output"));
     ImGui::SetNextItemWidth(200);
-    ImGui::SliderFloat("Volume##music", &d.volume, 0.0f, 2.0f, "%.2f");
+    ImGui::SliderFloat((std::string(tr("Volume")) + "##music").c_str(), &d.volume, 0.0f, 2.0f, "%.2f");
     ImGui::SetNextItemWidth(160);
-    busCombo("Bus##music", d.bus, m_file, false);
+    busCombo((std::string(tr("Bus")) + "##music").c_str(), d.bus, m_file, false);
     ImGui::SameLine();
-    ImGui::Checkbox("Loop##music", &d.loop);
+    checkbox((std::string(tr("Loop")) + "##music").c_str(), &d.loop);
 
     if (m_audio) {
-        ImGui::SeparatorText("Preview");
-        if (iconButton(kIconPlay, "Play track")) m_mixer.playMusic(d.name);
+        ImGui::SeparatorText(tr("Preview"));
+        if (iconButton(kIconPlay, tr("Play track"))) m_mixer.playMusic(d.name);
         ImGui::SameLine();
-        if (iconButton(kIconStop, "Stop music")) m_mixer.stopMusic(0.5f);
+        if (iconButton(kIconStop, tr("Stop music"))) m_mixer.stopMusic(0.5f);
         const MusicInfo info = m_mixer.music();
         ImGui::SameLine();
-        if (info.track.empty()) ImGui::TextDisabled("not playing");
-        else ImGui::Text("%s  bar %u  beat %.1f%s%s", info.track.c_str(), info.bar + 1, info.beat + 1.0f, info.next.empty() ? "" : "  -> ", info.next.c_str());
+        if (info.track.empty()) ImGui::TextDisabled(tr("not playing"));
+        else ImGui::Text(tr("%s  bar %u  beat %.1f%s%s"), info.track.c_str(), info.bar + 1, info.beat + 1.0f, info.next.empty() ? "" : "  -> ", info.next.c_str());
         if (!d.stemParam.empty()) {
             ImGui::SetNextItemWidth(-160);
             if (ImGui::SliderFloat(d.stemParam.c_str(), &m_stemParam, std::min(d.paramMin, d.paramMax), std::max(d.paramMin, d.paramMax)))
@@ -970,9 +1076,9 @@ void App::drawMusic() {
         }
         const EventDef* e = (m_selected >= 0 && m_selected < static_cast<int>(m_file.events.size())) ? &m_file.events[static_cast<size_t>(m_selected)] : nullptr;
         ImGui::BeginDisabled(!e);
-        if (ImGui::Button(e ? ("Stinger: " + e->name + " on the next beat").c_str() : "Stinger (select an event)")) m_mixer.stinger(e->name, Quantize::Beat);
+        if (ImGui::Button(e ? (tr("Stinger: ") + e->name + tr(" on the next beat")).c_str() : tr("Stinger (select an event)"))) m_mixer.stinger(e->name, Quantize::Beat);
         ImGui::SameLine();
-        if (ImGui::Button("next bar") && e) m_mixer.stinger(e->name, Quantize::Bar);
+        if (ImGui::Button(tr("next bar")) && e) m_mixer.stinger(e->name, Quantize::Bar);
         ImGui::EndDisabled();
     }
     ImGui::EndChild();
@@ -983,9 +1089,9 @@ void App::drawMusic() {
 
 void App::drawMix() {
     dockWithEvent();
-    ImGui::Begin("Mix");
-    ImGui::SeparatorText("Snapshots");
-    ImGui::TextDisabled("Bus values applied while a snapshot is on (game code: ctx.audio.setSnapshot(\"pause\", true)).");
+    ImGui::Begin(panelTitle(kIconVolume, "Mix").c_str());
+    ImGui::SeparatorText(tr("Snapshots"));
+    ImGui::TextDisabled(tr("Bus values applied while a snapshot is on (game code: ctx.audio.setSnapshot(\"pause\", true))."));
     int removeAt = -1;
     std::vector<SnapshotInfo> live;
     if (m_audio) m_mixer.snapshots(live);
@@ -999,46 +1105,46 @@ void App::drawMix() {
         ImGui::SameLine(220);
         if (m_audio) {
             bool on = m_mixer.snapshot(s.name);
-            if (ImGui::Checkbox("preview", &on)) m_mixer.setSnapshot(s.name, on);
+            if (checkbox(tr("preview"), &on)) m_mixer.setSnapshot(s.name, on);
             ImGui::SameLine();
             ImGui::ProgressBar(weight, ImVec2(80, 0), "");
             ImGui::SameLine();
         }
-        if (iconButton(kIconRemove, "Delete snapshot", true)) removeAt = static_cast<int>(i);
+        if (iconButton(kIconRemove, tr("Delete snapshot"), true)) removeAt = static_cast<int>(i);
         if (open) {
             const int index = static_cast<int>(i);
-            if (nameField("Name##snap", s.name, m_snapRename, sizeof(m_snapRename), m_snapRenaming, index,
+            if (nameField((std::string(tr("Name")) + "##snap").c_str(), s.name, m_snapRename, sizeof(m_snapRename), m_snapRenaming, index,
                           [&](const std::string& n) {
                               return std::any_of(m_file.snapshots.begin(), m_file.snapshots.end(), [&](const SnapshotDef& o) { return &o != &s && o.name == n; });
                           },
                           m_status))
                 m_statusTime = m_time;
             ImGui::SetNextItemWidth(120);
-            ImGui::DragFloat("Fade", &s.fade, 0.01f, 0.0f, 10.0f, "%.2f s");
+            ImGui::DragFloat(tr("Fade"), &s.fade, 0.01f, 0.0f, 10.0f, "%.2f s");
             int removeBus = -1;
             for (size_t k = 0; k < s.buses.size(); ++k) {
                 SnapshotBus& sb = s.buses[k];
                 ImGui::PushID(static_cast<int>(k));
-                if (iconButton(kIconRemove, "Remove bus value", true)) removeBus = static_cast<int>(k);
+                if (iconButton(kIconRemove, tr("Remove bus value"), true)) removeBus = static_cast<int>(k);
                 ImGui::SameLine();
                 ImGui::SetNextItemWidth(110);
                 busCombo("##bus", sb.bus, m_file, false);
                 ImGui::SameLine();
                 ImGui::SetNextItemWidth(140);
-                ImGui::SliderFloat("volume", &sb.volume, 0.0f, 1.5f, "%.2f");
+                ImGui::SliderFloat(tr("volume"), &sb.volume, 0.0f, 1.5f, "%.2f");
                 ImGui::SameLine();
                 ImGui::SetNextItemWidth(160);
-                ImGui::SliderFloat("lowpass", &sb.lowpass, 0.0f, 20000.0f, sb.lowpass > 0.0f ? "%.0f Hz" : "off", ImGuiSliderFlags_Logarithmic);
+                ImGui::SliderFloat(tr("lowpass"), &sb.lowpass, 0.0f, 20000.0f, sb.lowpass > 0.0f ? tr("%.0f Hz") : tr("off"), ImGuiSliderFlags_Logarithmic);
                 ImGui::PopID();
             }
             if (removeBus >= 0) s.buses.erase(s.buses.begin() + removeBus);
-            if (iconButton(kIconAdd, "Add bus value", true)) s.buses.push_back({"music", 1.0f, 0.0f});
+            if (iconButton(kIconAdd, tr("Add bus value"), true)) s.buses.push_back({"music", 1.0f, 0.0f});
             ImGui::TreePop();
         }
         ImGui::PopID();
     }
     if (removeAt >= 0) m_file.snapshots.erase(m_file.snapshots.begin() + removeAt);
-    if (iconButton(kIconAdd, "New snapshot")) {
+    if (iconButton(kIconAdd, tr("New snapshot"))) {
         SnapshotDef s;
         int n = 1;
         do s.name = "snapshot" + std::to_string(n++);
@@ -1047,17 +1153,17 @@ void App::drawMix() {
     }
 
     if (m_audio) {
-        ImGui::SeparatorText("Reverb preview");
-        ImGui::TextDisabled("Reverb values come from reverb zones in the scene. Try them here on buses with reverb on (Buses window).");
+        ImGui::SeparatorText(tr("Reverb preview"));
+        ImGui::TextDisabled(tr("Reverb values come from reverb zones in the scene. Try them here on buses with reverb on (Buses window)."));
         bool changed = false;
         ImGui::SetNextItemWidth(200);
-        changed |= ImGui::SliderFloat("Room size", &m_reverb.roomSize, 0.0f, 1.0f, "%.2f");
+        changed |= ImGui::SliderFloat(tr("Room size"), &m_reverb.roomSize, 0.0f, 1.0f, "%.2f");
         ImGui::SetNextItemWidth(200);
-        changed |= ImGui::SliderFloat("Damping", &m_reverb.damping, 0.0f, 1.0f, "%.2f");
+        changed |= ImGui::SliderFloat(tr("Damping"), &m_reverb.damping, 0.0f, 1.0f, "%.2f");
         ImGui::SetNextItemWidth(200);
-        changed |= ImGui::SliderFloat("Wet", &m_reverb.wet, 0.0f, 1.0f, "%.2f");
+        changed |= ImGui::SliderFloat(tr("Wet"), &m_reverb.wet, 0.0f, 1.0f, "%.2f");
         ImGui::SetNextItemWidth(200);
-        changed |= ImGui::SliderFloat("Width", &m_reverb.width, 0.0f, 1.0f, "%.2f");
+        changed |= ImGui::SliderFloat(tr("Width"), &m_reverb.width, 0.0f, 1.0f, "%.2f");
         if (changed) m_mixer.setReverb(m_reverb, 0.05f);
     }
     ImGui::End();
@@ -1100,7 +1206,7 @@ void App::playInGame(const EventDef& e) {
         if (!m_liveOn[i]) continue;
         if (request(m_live[i], "POST", "audio/play", body).status == 200) ++sent;
     }
-    m_liveError = sent ? std::string() : "No running game answered (is it a development build of this project?)";
+    m_liveError = sent ? std::string() : std::string(tr("No running game answered (is it a development build of this project?)"));
 }
 
 void App::reloadInGames() {
@@ -1109,45 +1215,45 @@ void App::reloadInGames() {
 }
 
 void App::drawLive() {
-    ImGui::Begin("Live");
+    ImGui::Begin(panelTitle(kIconConnect, "Live").c_str());
     if (m_live.empty()) {
-        ImGui::TextDisabled("No running game or editor for this project.");
-        ImGui::TextWrapped("Run a development build of the game (or the MealKit editor) for this project: it appears here. Saving updates it at once.");
+        ImGui::TextDisabled(tr("No running game or editor for this project."));
+        ImGui::TextWrapped(tr("Run a development build of the game (or the MealKit editor) for this project: it appears here. Saving updates it at once."));
         ImGui::End();
         return;
     }
     for (size_t i = 0; i < m_live.size(); ++i) {
         const Instance& in = m_live[i];
         bool on = m_liveOn[i];
-        const std::string label = in.kind + " (pid " + std::to_string(in.pid) + ", engine " + in.engine + ")";
-        if (ImGui::Checkbox(label.c_str(), &on)) m_liveOn[i] = on;
+        const std::string label = trf("%s (pid %u, engine %s)", in.kind.c_str(), static_cast<unsigned>(in.pid), in.engine.c_str()) + "##live" + std::to_string(i);
+        if (checkbox(label.c_str(), &on)) m_liveOn[i] = on;
         if (in.protocol != kLiveProtocol) {
             ImGui::SameLine();
-            ImGui::TextColored(ImVec4(1.0f, 0.55f, 0.45f, 1.0f), "protocol %u (tool %u)", in.protocol, kLiveProtocol);
+            ImGui::TextColored(ImVec4(1.0f, 0.55f, 0.45f, 1.0f), tr("protocol %u (tool %u)"), in.protocol, kLiveProtocol);
         }
     }
     const EventDef* e = (m_selected >= 0 && m_selected < static_cast<int>(m_file.events.size())) ? &m_file.events[static_cast<size_t>(m_selected)] : nullptr;
     const bool dirty = writeEvents(m_file) != m_savedText;
     ImGui::BeginDisabled(!e);
-    if (iconButton(kIconLaunch, "Play in game") && e) {
+    if (iconButton(kIconLaunch, tr("Play in game")) && e) {
         if (dirty) save(); // the game hears the saved file
         playInGame(*e);
     }
     ImGui::EndDisabled();
     if (dirty) {
         ImGui::SameLine();
-        ImGui::TextDisabled("(saves first)");
+        ImGui::TextDisabled(tr("(saves first)"));
     }
     if (!m_liveError.empty()) ImGui::TextColored(ImVec4(1.0f, 0.55f, 0.45f, 1.0f), "%s", m_liveError.c_str());
 
     if (!m_liveState.empty()) {
         const Json& j = m_liveJson;
-        ImGui::SeparatorText("Game audio");
-        ImGui::TextDisabled("%d event(s), %d mixed, %d virtual", static_cast<int>(j["events"].num()), static_cast<int>(j["stats"]["realVoices"].num()),
+        ImGui::SeparatorText(tr("Game audio"));
+        ImGui::TextDisabled(tr("%d event(s), %d mixed, %d virtual"), static_cast<int>(j["events"].num()), static_cast<int>(j["stats"]["realVoices"].num()),
                             static_cast<int>(j["stats"]["virtualVoices"].num()));
         for (const Json& v : j["voices"].array)
-            ImGui::Text("%s%s  %.2f  %.1f m", v["event"].str().c_str(), v["virtual"].flag() ? " (virtual)" : "", v["audibility"].num(), v["distance"].num());
-        ImGui::SeparatorText("Game buses");
+            ImGui::Text("%s%s  %.2f  %.1f m", v["event"].str().c_str(), v["virtual"].flag() ? tr(" (virtual)") : "", v["audibility"].num(), v["distance"].num());
+        ImGui::SeparatorText(tr("Game buses"));
         for (const Json& b : j["buses"].array) {
             char overlay[48];
             std::snprintf(overlay, sizeof(overlay), "%s %.2f", b["name"].str().c_str(), b["peak"].num());
@@ -1164,16 +1270,16 @@ void App::drawQuitDialog() {
         m_quitConfirmed = true;
         return;
     }
-    ImGui::OpenPopup("Unsaved changes");
-    if (ImGui::BeginPopupModal("Unsaved changes", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
-        ImGui::TextUnformatted("Save the changes to assets/sounds.events?");
-        if (ImGui::Button("Save")) {
+    ImGui::OpenPopup("###unsaved");
+    if (ImGui::BeginPopupModal((std::string(tr("Unsaved changes")) + "###unsaved").c_str(), nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+        ImGui::TextUnformatted(tr("Save the changes to assets/sounds.events?"));
+        if (ImGui::Button(tr("Save"))) {
             if (save()) m_quitConfirmed = true;
         }
         ImGui::SameLine();
-        if (ImGui::Button("Don't save")) m_quitConfirmed = true;
+        if (ImGui::Button(tr("Don't save"))) m_quitConfirmed = true;
         ImGui::SameLine();
-        if (ImGui::Button("Cancel")) {
+        if (ImGui::Button(tr("Cancel"))) {
             m_quitAsked = false;
             ImGui::CloseCurrentPopup();
         }

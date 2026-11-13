@@ -1,5 +1,5 @@
 // MkAudio executable: SDL3 window + SDL_Renderer + Dear ImGui (docking). The actual screen is App.
-//   MkAudio [--project <MealKit project folder>] [--select <event>] [--frames N --capture <png>]
+//   MkAudio [--project <MealKit project folder>] [--select <event>] [--lang ko|en] [--frames N --capture <png>]
 //   MkAudio --golden --project <folder> [--update] [--event <name>]   golden render tests of the project's events without a window
 //     (<project>/tests/audio/<event>.golden, mkaudio/Golden.h): "GOLDEN ok|new|updated|FAIL <event> ...", exit code 1 on a failure
 #include "App.h"
@@ -236,7 +236,7 @@ void applyEditorCaption(SDL_Window* window) {
 } // namespace
 
 int main(int argc, char** argv) {
-    std::string project, capture, select, onlyEvent;
+    std::string project, capture, select, onlyEvent, language;
     bool golden = false, update = false;
     long frames = 0; // --frames N: quit after N frames (--capture saves the last screen as PNG, for docs/tests)
     for (int i = 1; i < argc; ++i) {
@@ -244,6 +244,7 @@ int main(int argc, char** argv) {
         else if (std::strcmp(argv[i], "--frames") == 0 && i + 1 < argc) frames = std::strtol(argv[++i], nullptr, 10);
         else if (std::strcmp(argv[i], "--capture") == 0 && i + 1 < argc) capture = argv[++i];
         else if (std::strcmp(argv[i], "--select") == 0 && i + 1 < argc) select = argv[++i];
+        else if (std::strcmp(argv[i], "--lang") == 0 && i + 1 < argc) language = argv[++i]; // this run only (captures)
         else if (std::strcmp(argv[i], "--golden") == 0) golden = true;
         else if (std::strcmp(argv[i], "--update") == 0) update = true;
         else if (std::strcmp(argv[i], "--event") == 0 && i + 1 < argc) onlyEvent = argv[++i];
@@ -296,6 +297,7 @@ int main(int argc, char** argv) {
     mkaudio::tool::App app;
     app.window = window;
     app.iconFont = iconFont;
+    app.languageOverride = language;
     app.init(project);
     if (!select.empty()) app.select(select);
 
