@@ -1,4 +1,5 @@
 #include "App.h"
+#include "Form.h"
 #include "Strings.h"
 
 #include <mkcontract/User.h>
@@ -16,6 +17,7 @@
 #include <sstream>
 
 namespace mkaudio::tool {
+namespace form = mktool::form;
 namespace {
 
 constexpr const char* kEventsFile = "sounds.events"; // relative to assets
@@ -578,7 +580,7 @@ void App::drawEventEditor() {
     if (m_selected < 0 || m_selected >= static_cast<int>(m_file.events.size())) {
         ImGui::TextDisabled(tr("Select or add an event."));
         if (!m_messages.empty()) {
-            ImGui::SeparatorText(tr("While reading sounds.events"));
+            form::section(tr("While reading sounds.events"));
             for (const ParseMessage& m : m_messages) ImGui::TextDisabled(tr("line %u: %s%s"), m.line, m.error ? tr("error: ") : "", m.text.c_str());
         }
         ImGui::End();
@@ -586,13 +588,13 @@ void App::drawEventEditor() {
     }
     EventDef& e = m_file.events[static_cast<size_t>(m_selected)];
 
-    // Name (game code: ctx.audio.play("name", ...))
+    // Name (game code: ctx.audio.play("name", ...)); every row below is "name | control" (tool/Form.h)
     if (m_renaming != m_selected) {
         std::snprintf(m_rename, sizeof(m_rename), "%s", e.name.c_str());
         m_renaming = m_selected;
     }
-    ImGui::SetNextItemWidth(260);
-    if (ImGui::InputText(tr("Name"), m_rename, sizeof(m_rename), ImGuiInputTextFlags_EnterReturnsTrue) || ImGui::IsItemDeactivatedAfterEdit()) {
+    form::label(tr("Name"));
+    if (ImGui::InputText("##name", m_rename, sizeof(m_rename), ImGuiInputTextFlags_EnterReturnsTrue) || ImGui::IsItemDeactivatedAfterEdit()) {
         const std::string name = m_rename;
         const bool taken = std::any_of(m_file.events.begin(), m_file.events.end(), [&](const EventDef& o) { return &o != &e && o.name == name; });
         if (validName(name) && !taken) e.name = name;
@@ -602,36 +604,42 @@ void App::drawEventEditor() {
             std::snprintf(m_rename, sizeof(m_rename), "%s", e.name.c_str());
         }
     }
-    ImGui::SameLine();
+    form::label("");
     ImGui::TextDisabled(tr("game code: play(\"%s\")"), e.name.c_str());
 
     // ---- Clips
-    ImGui::SeparatorText(tr("Clips"));
+    form::section(tr("Clips"));
     int container = static_cast<int>(e.container);
-    ImGui::SetNextItemWidth(160);
     const char* containers[] = {tr("random"), tr("switch"), tr("blend")};
-    if (ImGui::Combo(tr("Container"), &container, containers, 3)) e.container = static_cast<Container>(container);
-    ImGui::SameLine();
-    ImGui::TextDisabled(e.container == Container::Random   ? tr("one clip at random, never the same twice")
-                        : e.container == Container::Switch ? tr("the parameter picks clip 0, 1, 2...")
-                                                           : tr("all clips crossfaded along the parameter"));
+    form::label(tr("Container"));
+    if (ImGui::Combo("##container", &container, containers, 3)) e.container = static_cast<Container>(container);
+    form::label("");
+    ImGui::TextDisabled("%s", e.container == Container::Random   ? tr("one clip at random, never the same twice")
+                              : e.container == Container::Switch ? tr("the parameter picks clip 0, 1, 2...")
+                                                                 : tr("all clips crossfaded along the parameter"));
     int removeAt = -1, moveUp = -1;
     for (size_t i = 0; i < e.clips.size(); ++i) {
         ImGui::PushID(static_cast<int>(i));
         const bool missing = resolveClip(e.clips[i].name).empty();
-        if (iconButton(kIconRemove, tr("Remove"), true)) removeAt = static_cast<int>(i);
-        ImGui::SameLine();
+        char index[16];
+        std::snprintf(index, sizeof(index), "%zu", i);
+        form::label(index);
+        ImGui::AlignTextToFramePadding();
+        if (missing) ImGui::TextColored(ImVec4(1.0f, 0.55f, 0.45f, 1.0f), tr("%s (missing)"), e.clips[i].name.c_str());
+        else ImGui::TextUnformatted(e.clips[i].name.c_str());
+        // Row actions at the right end
+        const float buttons = ImGui::GetFrameHeight() * 2.0f + ImGui::GetStyle().ItemSpacing.x;
+        ImGui::SameLine(ImGui::GetWindowContentRegionMax().x - buttons);
         ImGui::BeginDisabled(i == 0);
         if (iconButton(kIconUp, tr("Move up"), true)) moveUp = static_cast<int>(i);
         ImGui::EndDisabled();
         ImGui::SameLine();
-        if (missing) ImGui::TextColored(ImVec4(1.0f, 0.55f, 0.45f, 1.0f), tr("%zu  %s (missing)"), i, e.clips[i].name.c_str());
-        else ImGui::Text(tr("%zu  %s"), i, e.clips[i].name.c_str());
+        if (iconButton(kIconRemove, tr("Remove"), true)) removeAt = static_cast<int>(i);
         ImGui::PopID();
     }
     if (removeAt >= 0) e.clips.erase(e.clips.begin() + removeAt);
     if (moveUp > 0) std::swap(e.clips[static_cast<size_t>(moveUp)], e.clips[static_cast<size_t>(moveUp) - 1]);
-    ImGui::SetNextItemWidth(320);
+    form::label(e.clips.empty() ? tr("Clips") : "");
     if (ImGui::BeginCombo("##addclip", tr("+ Add clip from assets/"), ImGuiComboFlags_HeightLarge)) {
         static char clipFilter[64] = {};
         ImGui::InputTextWithHint("##cf", tr("Filter"), clipFilter, sizeof(clipFilter));
@@ -643,28 +651,30 @@ void App::drawEventEditor() {
         ImGui::EndCombo();
     }
 
-    // ---- Volume/pitch
-    ImGui::SeparatorText(tr("Volume and pitch"));
-    ImGui::SetNextItemWidth(200);
-    ImGui::SliderFloat(tr("Volume"), &e.volume, 0.0f, 2.0f, "%.2f");
-    ImGui::SameLine();
-    ImGui::SetNextItemWidth(140);
-    ImGui::SliderFloat((std::string(tr("+/- random")) + "##v").c_str(), &e.volumeRandom, 0.0f, 0.5f, "%.2f");
-    ImGui::SetNextItemWidth(200);
-    ImGui::SliderFloat(tr("Pitch"), &e.pitch, 0.25f, 4.0f, "%.2f", ImGuiSliderFlags_Logarithmic);
-    ImGui::SameLine();
-    ImGui::SetNextItemWidth(140);
-    ImGui::SliderFloat((std::string(tr("+/- random")) + "##p").c_str(), &e.pitchRandom, 0.0f, 0.5f, "%.2f");
+    // ---- Volume/pitch: the value, then its +/- random beside it
+    form::section(tr("Volume and pitch"));
+    const auto valueAndRandom = [&](const char* name, const char* id, float* value, float lo, float hi, ImGuiSliderFlags flags, const char* randomId,
+                                    float* random) {
+        const float width = form::label(name);
+        const float randomWidth = std::min(110.0f * form::dpi(), width * 0.38f);
+        ImGui::SetNextItemWidth(width - randomWidth - ImGui::GetStyle().ItemSpacing.x);
+        form::slider(id, value, lo, hi, "%.2f", flags);
+        ImGui::SameLine();
+        ImGui::SetNextItemWidth(randomWidth);
+        ImGui::DragFloat(randomId, random, 0.005f, 0.0f, 0.5f, "\xC2\xB1 %.2f"); // U+00B1 plus-minus
+        ImGui::SetItemTooltip("%s", tr("+/- random"));
+    };
+    valueAndRandom(tr("Volume"), "##volume", &e.volume, 0.0f, 2.0f, 0, "##v", &e.volumeRandom);
+    valueAndRandom(tr("Pitch"), "##pitch", &e.pitch, 0.25f, 4.0f, ImGuiSliderFlags_Logarithmic, "##p", &e.pitchRandom);
 
     // ---- Parameters and curves
-    ImGui::SeparatorText(tr("Parameter"));
+    form::section(tr("Parameter"));
     char param[64];
     std::snprintf(param, sizeof(param), "%s", e.param.c_str());
-    ImGui::SetNextItemWidth(160);
-    if (ImGui::InputText((std::string(tr("Name")) + "##param").c_str(), param, sizeof(param))) e.param = param;
-    ImGui::SameLine();
-    ImGui::SetNextItemWidth(160);
-    ImGui::DragFloatRange2(tr("Range"), &e.paramMin, &e.paramMax, 0.05f);
+    form::label(tr("Name"));
+    if (ImGui::InputTextWithHint("##param", tr("e.g. speed"), param, sizeof(param))) e.param = param;
+    form::label(tr("Range"));
+    ImGui::DragFloatRange2("##range", &e.paramMin, &e.paramMax, 0.05f);
     const float lo = std::min(e.paramMin, e.paramMax), hi = std::max(e.paramMin, e.paramMax);
     const float t = (e.param.empty() || hi == lo) ? 0.0f : std::clamp((m_param - e.paramMin) / (e.paramMax - e.paramMin), 0.0f, 1.0f);
     if (e.param.empty()) {
@@ -679,24 +689,25 @@ void App::drawEventEditor() {
     }
 
     // ---- 3D
-    ImGui::SeparatorText("3D");
+    form::section("3D");
+    form::label("");
     checkbox(tr("Positioned in the world"), &e.spatial);
     if (e.spatial) {
-        ImGui::SetNextItemWidth(260);
-        ImGui::DragFloatRange2(tr("Distance (full, silent)"), &e.minDistance, &e.maxDistance, 0.1f, 0.0f, 1000.0f, "%.1f m", "%.1f m");
+        form::label(tr("Distance (full, silent)"));
+        ImGui::DragFloatRange2("##distance", &e.minDistance, &e.maxDistance, 0.1f, 0.0f, 1000.0f, "%.1f m", "%.1f m");
         attenuationPlot(e.minDistance, e.maxDistance, m_distance);
-        ImGui::SetNextItemWidth(200);
-        ImGui::SliderFloat(tr("Behind a wall: volume"), &e.occlusionVolume, 0.0f, 1.0f, "%.2f");
-        ImGui::SameLine();
-        ImGui::SetNextItemWidth(160);
-        ImGui::SliderFloat(tr("low-pass"), &e.occlusionLowpass, 0.0f, 20000.0f, e.occlusionLowpass > 0.0f ? tr("%.0f Hz") : tr("off"), ImGuiSliderFlags_Logarithmic);
-        ImGui::TextDisabled(tr("The game checks a line from the listener to the sound; fully blocked uses these values."));
+        const char* occlusionTip = tr("The game checks a line from the listener to the sound; fully blocked uses these values.");
+        form::label(tr("Behind a wall: volume"), occlusionTip);
+        form::slider("##occlusionVolume", &e.occlusionVolume, 0.0f, 1.0f, "%.2f");
+        form::label(tr("Behind a wall: low-pass"), occlusionTip);
+        form::slider("##occlusionLowpass", &e.occlusionLowpass, 0.0f, 20000.0f, e.occlusionLowpass > 0.0f ? tr("%.0f Hz") : tr("off"),
+                     ImGuiSliderFlags_Logarithmic);
     }
 
     // ---- Playback
-    ImGui::SeparatorText(tr("Playback"));
-    ImGui::SetNextItemWidth(160);
-    if (ImGui::BeginCombo(tr("Bus"), e.bus.c_str())) {
+    form::section(tr("Playback"));
+    form::label(tr("Bus"));
+    if (ImGui::BeginCombo("##bus", e.bus.c_str())) {
         for (const char* b : kStandardBuses)
             if (std::string(b) != "master" && ImGui::Selectable(b, e.bus == b)) e.bus = b;
         for (const BusDef& b : m_file.buses)
@@ -704,39 +715,38 @@ void App::drawEventEditor() {
         ImGui::EndCombo();
     }
     if (!knownBus(m_file, e.bus)) {
-        ImGui::SameLine();
+        form::label("");
         ImGui::TextColored(ImVec4(1.0f, 0.75f, 0.3f, 1.0f), tr("not defined (made under master)"));
     }
+    form::label("");
     checkbox(tr("Loop"), &e.loop);
     ImGui::SameLine();
     checkbox(tr("Stream from disk (music)"), &e.stream);
     int priority = static_cast<int>(e.priority), maxInstances = static_cast<int>(e.maxInstances);
-    ImGui::SetNextItemWidth(160);
-    if (ImGui::SliderInt(tr("Priority"), &priority, 0, 100)) e.priority = static_cast<uint32_t>(priority);
-    ImGui::SetNextItemWidth(160);
-    if (ImGui::SliderInt(tr("Max at once"), &maxInstances, 1, 32)) e.maxInstances = static_cast<uint32_t>(maxInstances);
-    ImGui::SameLine();
+    form::label(tr("Priority"));
+    if (form::slider("##priority", &priority, 0, 100)) e.priority = static_cast<uint32_t>(priority);
+    form::label(tr("Max at once"));
+    if (form::slider("##max", &maxInstances, 1, 32)) e.maxInstances = static_cast<uint32_t>(maxInstances);
     int steal = static_cast<int>(e.steal);
-    ImGui::SetNextItemWidth(120);
     const char* steals[] = {tr("stop oldest"), tr("stop quietest"), tr("don't play")};
-    if (ImGui::Combo(tr("When full"), &steal, steals, 3)) e.steal = static_cast<Steal>(steal);
-    ImGui::SetNextItemWidth(160);
-    ImGui::DragFloat(tr("Cooldown"), &e.cooldown, 0.01f, 0.0f, 60.0f, "%.2f s");
+    form::label(tr("When full"));
+    if (ImGui::Combo("##steal", &steal, steals, 3)) e.steal = static_cast<Steal>(steal);
+    form::label(tr("Cooldown"));
+    ImGui::DragFloat("##cooldown", &e.cooldown, 0.01f, 0.0f, 60.0f, "%.2f s");
 
     // ---- Subtitles
-    ImGui::SeparatorText(tr("Subtitle"));
+    form::section(tr("Subtitle"));
     char subtitle[96];
     std::snprintf(subtitle, sizeof(subtitle), "%s", e.subtitle.c_str());
-    ImGui::SetNextItemWidth(220);
-    if (ImGui::InputTextWithHint(tr("String key"), tr("e.g. sub.door"), subtitle, sizeof(subtitle))) e.subtitle = subtitle;
+    form::label(tr("String key"));
+    if (ImGui::InputTextWithHint("##subtitle", tr("e.g. sub.door"), subtitle, sizeof(subtitle))) e.subtitle = subtitle;
     if (!e.subtitle.empty()) {
-        ImGui::SameLine();
-        ImGui::SetNextItemWidth(120);
-        ImGui::DragFloat(tr("Shown for"), &e.subtitleSeconds, 0.05f, 0.2f, 30.0f, "%.1f s");
+        form::label(tr("Shown for"));
+        ImGui::DragFloat("##shownFor", &e.subtitleSeconds, 0.05f, 0.2f, 30.0f, "%.1f s");
     }
 
     if (!m_messages.empty()) {
-        ImGui::SeparatorText(tr("While reading sounds.events"));
+        form::section(tr("While reading sounds.events"));
         for (const ParseMessage& m : m_messages) ImGui::TextDisabled(tr("line %u: %s%s"), m.line, m.error ? tr("error: ") : "", m.text.c_str());
     }
     ImGui::End();
@@ -751,8 +761,9 @@ bool nameField(const char* label, std::string& name, char* buf, size_t size, int
         std::snprintf(buf, size, "%s", name.c_str());
         editing = index;
     }
-    ImGui::SetNextItemWidth(220);
-    if (!(ImGui::InputText(label, buf, size, ImGuiInputTextFlags_EnterReturnsTrue) || ImGui::IsItemDeactivatedAfterEdit())) return false;
+    form::label(label); // the visible part, before any "##"
+    if (!(ImGui::InputText((std::string("##") + label).c_str(), buf, size, ImGuiInputTextFlags_EnterReturnsTrue) || ImGui::IsItemDeactivatedAfterEdit()))
+        return false;
     const std::string next = buf;
     if (next == name) return false;
     if (validName(next) && !taken(next)) {
@@ -863,7 +874,7 @@ void App::drawBuses() {
             }
             ImGui::TableNextColumn();
             ImGui::SetNextItemWidth(-FLT_MIN);
-            ImGui::SliderFloat("##mix", &b.volume, 0.0f, 1.5f, "%.2f");
+            form::slider("##mix", &b.volume, 0.0f, 1.5f, "%.2f");
             ImGui::TableNextColumn();
             meter(b.name);
             ImGui::TableNextColumn();
@@ -873,17 +884,18 @@ void App::drawBuses() {
             if (now.duck < 0.999f) summary += " (now " + std::to_string(static_cast<int>(now.duck * 100.0f + 0.5f)) + "%)";
             if (ImGui::SmallButton(summary.empty() ? tr("none...") : (summary + "...").c_str())) ImGui::OpenPopup("fx");
             if (ImGui::BeginPopup("fx")) {
+                ImGui::Dummy(ImVec2(320.0f * form::dpi(), 0.0f)); // a popup sizes to its content: room for the two columns
                 checkbox(tr("Reverb (amount from reverb zones)"), &b.reverb);
-                ImGui::SetNextItemWidth(140);
-                busCombo(tr("Ducked by"), b.duckBy, m_file, true);
+                form::label(tr("Ducked by"));
+                busCombo("##duckBy", b.duckBy, m_file, true);
                 if (b.duckBy == b.name) b.duckBy.clear();
                 if (!b.duckBy.empty()) {
-                    ImGui::SetNextItemWidth(160);
-                    ImGui::SliderFloat(tr("Down to"), &b.duckVolume, 0.0f, 1.0f, "%.2f");
-                    ImGui::SetNextItemWidth(160);
-                    ImGui::DragFloat(tr("Attack"), &b.duckAttack, 0.005f, 0.0f, 5.0f, "%.2f s");
-                    ImGui::SetNextItemWidth(160);
-                    ImGui::DragFloat(tr("Release"), &b.duckRelease, 0.005f, 0.0f, 10.0f, "%.2f s");
+                    form::label(tr("Down to"));
+                    form::slider("##duckVolume", &b.duckVolume, 0.0f, 1.0f, "%.2f");
+                    form::label(tr("Attack"));
+                    ImGui::DragFloat("##attack", &b.duckAttack, 0.005f, 0.0f, 5.0f, "%.2f s");
+                    form::label(tr("Release"));
+                    ImGui::DragFloat("##release", &b.duckRelease, 0.005f, 0.0f, 10.0f, "%.2f s");
                 }
                 ImGui::EndPopup();
             }
@@ -935,22 +947,22 @@ void App::drawPreview() {
     if (ImGui::Button(tr("Stop all"))) m_mixer.stopAll(); // no glyph of its own: words (engine docs/TOOL_DESIGN.md section 1)
     if (e && !e->param.empty()) {
         const float lo = std::min(e->paramMin, e->paramMax), hi = std::max(e->paramMin, e->paramMax);
-        ImGui::SetNextItemWidth(-120);
-        if (ImGui::SliderFloat(e->param.c_str(), &m_param, lo, hi)) m_mixer.setParam(m_preview, e->param, m_param);
+        form::label(e->param.c_str());
+        if (form::slider("##param", &m_param, lo, hi)) m_mixer.setParam(m_preview, e->param, m_param);
     }
-    ImGui::SetNextItemWidth(-120);
-    if (ImGui::SliderFloat(tr("Distance"), &m_distance, 0.0f, 100.0f, "%.1f m")) m_mixer.setPosition(m_preview, {0, 0, m_distance});
-    ImGui::SetNextItemWidth(-120);
-    if (ImGui::SliderFloat(tr("Occlusion"), &m_occlusion, 0.0f, 1.0f, "%.2f")) m_mixer.setOcclusion(m_preview, m_occlusion);
+    form::label(tr("Distance"));
+    if (form::slider("##distance", &m_distance, 0.0f, 100.0f, "%.1f m")) m_mixer.setPosition(m_preview, {0, 0, m_distance});
+    form::label(tr("Occlusion"));
+    if (form::slider("##occlusion", &m_occlusion, 0.0f, 1.0f, "%.2f")) m_mixer.setOcclusion(m_preview, m_occlusion);
 
     const Stats& st = m_mixer.stats();
-    ImGui::SeparatorText(tr("Voices"));
+    form::section(tr("Voices"));
     ImGui::TextDisabled(tr("%u mixed, %u virtual, %.3f ms"), st.realVoices, st.virtualVoices, st.updateMs);
     std::vector<VoiceInfo> voices;
     m_mixer.voices(voices);
     for (const VoiceInfo& v : voices)
         ImGui::Text("%s%s  %.2f  %.1f m", v.event.c_str(), v.virtualVoice ? tr(" (virtual)") : v.loop ? tr(" (loop)") : "", v.audibility, v.distance);
-    ImGui::SeparatorText(tr("Culled (newest first)"));
+    form::section(tr("Culled (newest first)"));
     const auto& culls = m_mixer.culls();
     int shown = 0;
     for (auto it = culls.rbegin(); it != culls.rend() && shown < 12; ++it, ++shown) ImGui::TextDisabled("%s  %s", it->event.c_str(), it->reason);
@@ -996,22 +1008,26 @@ void App::drawMusic() {
                   [&](const std::string& n) { return std::any_of(m_file.music.begin(), m_file.music.end(), [&](const MusicDef& o) { return &o != &d && o.name == n; }); },
                   m_status))
         m_statusTime = m_time;
-    ImGui::SameLine();
+    form::label("");
     ImGui::TextDisabled(tr("game code: playMusic(\"%s\")"), d.name.c_str());
 
-    ImGui::SeparatorText(tr("Stems (same length, played together)"));
+    form::section(tr("Stems (same length, played together)"));
     int removeAt = -1;
     for (size_t i = 0; i < d.stems.size(); ++i) {
         ImGui::PushID(static_cast<int>(i));
-        if (iconButton(kIconRemove, tr("Remove"), true)) removeAt = static_cast<int>(i);
-        ImGui::SameLine();
+        char index[16];
+        std::snprintf(index, sizeof(index), "%zu", i);
+        form::label(index);
+        ImGui::AlignTextToFramePadding();
         const bool missing = resolveClip(d.stems[i].name).empty();
-        if (missing) ImGui::TextColored(ImVec4(1.0f, 0.55f, 0.45f, 1.0f), tr("%zu  %s (missing)"), i, d.stems[i].name.c_str());
-        else ImGui::Text(tr("%zu  %s%s"), i, d.stems[i].name.c_str(), i == 0 ? tr("  (always on)") : "");
+        if (missing) ImGui::TextColored(ImVec4(1.0f, 0.55f, 0.45f, 1.0f), tr("%s (missing)"), d.stems[i].name.c_str());
+        else ImGui::Text("%s%s", d.stems[i].name.c_str(), i == 0 ? tr("  (always on)") : "");
+        ImGui::SameLine(ImGui::GetWindowContentRegionMax().x - ImGui::GetFrameHeight());
+        if (iconButton(kIconRemove, tr("Remove"), true)) removeAt = static_cast<int>(i);
         ImGui::PopID();
     }
     if (removeAt >= 0) d.stems.erase(d.stems.begin() + removeAt);
-    ImGui::SetNextItemWidth(320);
+    form::label(d.stems.empty() ? tr("Stems") : "");
     if (ImGui::BeginCombo("##addstem", tr("+ Add stem from assets/"), ImGuiComboFlags_HeightLarge)) {
         static char stemFilter[64] = {};
         ImGui::InputTextWithHint("##sf", tr("Filter"), stemFilter, sizeof(stemFilter));
@@ -1022,46 +1038,43 @@ void App::drawMusic() {
         ImGui::EndCombo();
     }
 
-    ImGui::SeparatorText(tr("Timing"));
-    ImGui::SetNextItemWidth(120);
-    ImGui::DragFloat(tr("BPM"), &d.bpm, 0.5f, 20.0f, 400.0f, "%.1f");
+    form::section(tr("Timing"));
+    form::label(tr("BPM"));
+    ImGui::DragFloat("##bpm", &d.bpm, 0.5f, 20.0f, 400.0f, "%.1f");
     d.bpm = std::max(d.bpm, 1.0f);
-    ImGui::SameLine();
     int beats = static_cast<int>(d.beatsPerBar);
-    ImGui::SetNextItemWidth(100);
-    if (ImGui::SliderInt(tr("Beats per bar"), &beats, 1, 12)) d.beatsPerBar = static_cast<uint32_t>(beats);
-    ImGui::SetNextItemWidth(120);
-    ImGui::DragFloat(tr("Pickup before beat 1"), &d.offset, 0.005f, 0.0f, 10.0f, "%.3f s");
+    form::label(tr("Beats per bar"));
+    if (form::slider("##beats", &beats, 1, 12)) d.beatsPerBar = static_cast<uint32_t>(beats);
+    form::label(tr("Pickup before beat 1"));
+    ImGui::DragFloat("##pickup", &d.offset, 0.005f, 0.0f, 10.0f, "%.3f s");
     int transition = static_cast<int>(d.transition);
-    ImGui::SetNextItemWidth(120);
     const char* transitions[] = {tr("once (right away)"), tr("next beat"), tr("next bar")};
-    if (ImGui::Combo(tr("Switch to this at"), &transition, transitions, 3)) d.transition = static_cast<Quantize>(transition);
-    ImGui::SameLine();
-    ImGui::SetNextItemWidth(100);
-    ImGui::DragFloat(tr("Crossfade"), &d.crossfade, 0.005f, 0.0f, 4.0f, "%.2f s");
+    form::label(tr("Switch to this at"));
+    if (ImGui::Combo("##transition", &transition, transitions, 3)) d.transition = static_cast<Quantize>(transition);
+    form::label(tr("Crossfade"));
+    ImGui::DragFloat("##crossfade", &d.crossfade, 0.005f, 0.0f, 4.0f, "%.2f s");
 
-    ImGui::SeparatorText(tr("Stem parameter"));
+    form::section(tr("Stem parameter"));
     char param[64];
     std::snprintf(param, sizeof(param), "%s", d.stemParam.c_str());
-    ImGui::SetNextItemWidth(160);
-    if (ImGui::InputTextWithHint((std::string(tr("Name")) + "##stemparam").c_str(), tr("e.g. tension"), param, sizeof(param))) d.stemParam = param;
-    ImGui::SameLine();
-    ImGui::SetNextItemWidth(160);
-    ImGui::DragFloatRange2((std::string(tr("Range")) + "##stem").c_str(), &d.paramMin, &d.paramMax, 0.05f);
-    ImGui::SetNextItemWidth(120);
-    ImGui::DragFloat(tr("Stem fade"), &d.stemFade, 0.01f, 0.0f, 10.0f, "%.2f s");
+    form::label(tr("Name"));
+    if (ImGui::InputTextWithHint("##stemparam", tr("e.g. tension"), param, sizeof(param))) d.stemParam = param;
+    form::label(tr("Range"));
+    ImGui::DragFloatRange2("##stem", &d.paramMin, &d.paramMax, 0.05f);
+    form::label(tr("Stem fade"));
+    ImGui::DragFloat("##stemfade", &d.stemFade, 0.01f, 0.0f, 10.0f, "%.2f s");
     if (d.stemParam.empty()) ImGui::TextDisabled(tr("No parameter: every stem plays. With one, stems after the first come in one by one as it rises."));
 
-    ImGui::SeparatorText(tr("Output"));
-    ImGui::SetNextItemWidth(200);
-    ImGui::SliderFloat((std::string(tr("Volume")) + "##music").c_str(), &d.volume, 0.0f, 2.0f, "%.2f");
-    ImGui::SetNextItemWidth(160);
-    busCombo((std::string(tr("Bus")) + "##music").c_str(), d.bus, m_file, false);
-    ImGui::SameLine();
+    form::section(tr("Output"));
+    form::label(tr("Volume"));
+    form::slider("##musicvolume", &d.volume, 0.0f, 2.0f, "%.2f");
+    form::label(tr("Bus"));
+    busCombo("##musicbus", d.bus, m_file, false);
+    form::label("");
     checkbox((std::string(tr("Loop")) + "##music").c_str(), &d.loop);
 
     if (m_audio) {
-        ImGui::SeparatorText(tr("Preview"));
+        form::section(tr("Preview"));
         if (iconButton(kIconPlay, tr("Play track"))) m_mixer.playMusic(d.name);
         ImGui::SameLine();
         if (iconButton(kIconStop, tr("Stop music"))) m_mixer.stopMusic(0.5f);
@@ -1070,8 +1083,8 @@ void App::drawMusic() {
         if (info.track.empty()) ImGui::TextDisabled(tr("not playing"));
         else ImGui::Text(tr("%s  bar %u  beat %.1f%s%s"), info.track.c_str(), info.bar + 1, info.beat + 1.0f, info.next.empty() ? "" : "  -> ", info.next.c_str());
         if (!d.stemParam.empty()) {
-            ImGui::SetNextItemWidth(-160);
-            if (ImGui::SliderFloat(d.stemParam.c_str(), &m_stemParam, std::min(d.paramMin, d.paramMax), std::max(d.paramMin, d.paramMax)))
+            form::label(d.stemParam.c_str());
+            if (form::slider("##stemPreview", &m_stemParam, std::min(d.paramMin, d.paramMax), std::max(d.paramMin, d.paramMax)))
                 m_mixer.setGlobalParam(d.stemParam, m_stemParam);
         }
         const EventDef* e = (m_selected >= 0 && m_selected < static_cast<int>(m_file.events.size())) ? &m_file.events[static_cast<size_t>(m_selected)] : nullptr;
@@ -1090,7 +1103,7 @@ void App::drawMusic() {
 void App::drawMix() {
     dockWithEvent();
     ImGui::Begin(panelTitle(kIconVolume, "Mix").c_str());
-    ImGui::SeparatorText(tr("Snapshots"));
+    form::section(tr("Snapshots"));
     ImGui::TextDisabled(tr("Bus values applied while a snapshot is on (game code: ctx.audio.setSnapshot(\"pause\", true))."));
     int removeAt = -1;
     std::vector<SnapshotInfo> live;
@@ -1119,22 +1132,26 @@ void App::drawMix() {
                           },
                           m_status))
                 m_statusTime = m_time;
-            ImGui::SetNextItemWidth(120);
-            ImGui::DragFloat(tr("Fade"), &s.fade, 0.01f, 0.0f, 10.0f, "%.2f s");
+            form::label(tr("Fade"));
+            ImGui::DragFloat("##fade", &s.fade, 0.01f, 0.0f, 10.0f, "%.2f s");
             int removeBus = -1;
             for (size_t k = 0; k < s.buses.size(); ++k) {
                 SnapshotBus& sb = s.buses[k];
                 ImGui::PushID(static_cast<int>(k));
-                if (iconButton(kIconRemove, tr("Remove bus value"), true)) removeBus = static_cast<int>(k);
-                ImGui::SameLine();
-                ImGui::SetNextItemWidth(110);
+                // One bus value per row: the bus in the name column, its volume and low-pass side by side, remove at the end
+                const float column = form::labelWidth();
+                ImGui::SetNextItemWidth(column - ImGui::GetStyle().ItemSpacing.x);
                 busCombo("##bus", sb.bus, m_file, false);
                 ImGui::SameLine();
-                ImGui::SetNextItemWidth(140);
-                ImGui::SliderFloat(tr("volume"), &sb.volume, 0.0f, 1.5f, "%.2f");
+                const float rest = ImGui::GetContentRegionAvail().x - ImGui::GetFrameHeight() - ImGui::GetStyle().ItemSpacing.x * 2.0f;
+                ImGui::SetNextItemWidth(rest * 0.5f);
+                form::slider("##volume", &sb.volume, 0.0f, 1.5f, tr("volume %.2f"));
                 ImGui::SameLine();
-                ImGui::SetNextItemWidth(160);
-                ImGui::SliderFloat(tr("lowpass"), &sb.lowpass, 0.0f, 20000.0f, sb.lowpass > 0.0f ? tr("%.0f Hz") : tr("off"), ImGuiSliderFlags_Logarithmic);
+                ImGui::SetNextItemWidth(rest * 0.5f);
+                form::slider("##lowpass", &sb.lowpass, 0.0f, 20000.0f, sb.lowpass > 0.0f ? tr("low-pass %.0f Hz") : tr("low-pass off"),
+                             ImGuiSliderFlags_Logarithmic);
+                ImGui::SameLine();
+                if (iconButton(kIconRemove, tr("Remove bus value"), true)) removeBus = static_cast<int>(k);
                 ImGui::PopID();
             }
             if (removeBus >= 0) s.buses.erase(s.buses.begin() + removeBus);
@@ -1153,17 +1170,17 @@ void App::drawMix() {
     }
 
     if (m_audio) {
-        ImGui::SeparatorText(tr("Reverb preview"));
+        form::section(tr("Reverb preview"));
         ImGui::TextDisabled(tr("Reverb values come from reverb zones in the scene. Try them here on buses with reverb on (Buses window)."));
         bool changed = false;
-        ImGui::SetNextItemWidth(200);
-        changed |= ImGui::SliderFloat(tr("Room size"), &m_reverb.roomSize, 0.0f, 1.0f, "%.2f");
-        ImGui::SetNextItemWidth(200);
-        changed |= ImGui::SliderFloat(tr("Damping"), &m_reverb.damping, 0.0f, 1.0f, "%.2f");
-        ImGui::SetNextItemWidth(200);
-        changed |= ImGui::SliderFloat(tr("Wet"), &m_reverb.wet, 0.0f, 1.0f, "%.2f");
-        ImGui::SetNextItemWidth(200);
-        changed |= ImGui::SliderFloat(tr("Width"), &m_reverb.width, 0.0f, 1.0f, "%.2f");
+        form::label(tr("Room size"));
+        changed |= form::slider("##room", &m_reverb.roomSize, 0.0f, 1.0f, "%.2f");
+        form::label(tr("Damping"));
+        changed |= form::slider("##damping", &m_reverb.damping, 0.0f, 1.0f, "%.2f");
+        form::label(tr("Wet"));
+        changed |= form::slider("##wet", &m_reverb.wet, 0.0f, 1.0f, "%.2f");
+        form::label(tr("Width"));
+        changed |= form::slider("##width", &m_reverb.width, 0.0f, 1.0f, "%.2f");
         if (changed) m_mixer.setReverb(m_reverb, 0.05f);
     }
     ImGui::End();
@@ -1248,12 +1265,12 @@ void App::drawLive() {
 
     if (!m_liveState.empty()) {
         const Json& j = m_liveJson;
-        ImGui::SeparatorText(tr("Game audio"));
+        form::section(tr("Game audio"));
         ImGui::TextDisabled(tr("%d event(s), %d mixed, %d virtual"), static_cast<int>(j["events"].num()), static_cast<int>(j["stats"]["realVoices"].num()),
                             static_cast<int>(j["stats"]["virtualVoices"].num()));
         for (const Json& v : j["voices"].array)
             ImGui::Text("%s%s  %.2f  %.1f m", v["event"].str().c_str(), v["virtual"].flag() ? tr(" (virtual)") : "", v["audibility"].num(), v["distance"].num());
-        ImGui::SeparatorText(tr("Game buses"));
+        form::section(tr("Game buses"));
         for (const Json& b : j["buses"].array) {
             char overlay[48];
             std::snprintf(overlay, sizeof(overlay), "%s %.2f", b["name"].str().c_str(), b["peak"].num());
