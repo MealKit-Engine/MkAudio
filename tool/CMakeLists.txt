@@ -59,6 +59,10 @@ if(WIN32)
 endif()
 
 install(TARGETS MkAudio RUNTIME DESTINATION .)
+# Icon font (engine docs/TOOL_DESIGN.md section 2): read from beside the executable, so it is copied there and installed with it
+add_custom_command(TARGET MkAudio POST_BUILD COMMAND ${CMAKE_COMMAND} -E copy_if_different
+    ${CMAKE_CURRENT_SOURCE_DIR}/../third_party/fluent-icons/FluentSystemIcons-Regular.ttf $<TARGET_FILE_DIR:MkAudio>)
+install(FILES ${CMAKE_CURRENT_SOURCE_DIR}/../third_party/fluent-icons/FluentSystemIcons-Regular.ttf DESTINATION .)
 install(FILES ${CMAKE_BINARY_DIR}/bin/mealkit-tool.txt DESTINATION .)
 
 if(WIN32)

@@ -23,23 +23,23 @@ namespace {
 constexpr const char* kEventsFile = "sounds.events"; // relative to assets
 constexpr const char* kOldTable = "sounds.table";    // MealKit engine 0.5 format (loaded and migrated)
 constexpr size_t kUndoDepth = 200;
-// Glyphs from engine docs/TOOL_DESIGN.md section 2 (Segoe Fluent Icons / MDL2 Assets)
-constexpr const char* kIconAdd = "\xEE\x9C\x90";    // U+E710
-constexpr const char* kIconRemove = "\xEE\x9C\xB8"; // U+E738 remove from a list
-constexpr const char* kIconCopy = "\xEE\xA3\x88";   // U+E8C8
-constexpr const char* kIconUp = "\xEE\x9D\x8A";     // U+E74A move up
-constexpr const char* kIconPlay = "\xEE\x9D\xA8";   // U+E768
-constexpr const char* kIconStop = "\xEE\x9C\x9A";   // U+E71A
-constexpr const char* kIconLaunch = "\xEE\xA2\xA7"; // U+E8A7 open in its program
+// Glyphs from engine docs/TOOL_DESIGN.md section 2 (Fluent UI System Icons, names in comments)
+constexpr const char* kIconAdd = "\xEF\x84\x89";    // add
+constexpr const char* kIconRemove = "\xEE\xAF\x90"; // subtract remove from a list
+constexpr const char* kIconCopy = "\xEF\x8C\xAB";   // copy
+constexpr const char* kIconUp = "\xEF\x86\x9B";     // arrow_up move up
+constexpr const char* kIconPlay = "\xEF\x98\x85";   // play
+constexpr const char* kIconStop = "\xEF\x9C\xAA";   // stop
+constexpr const char* kIconLaunch = "\xEF\x96\x82"; // open open in its program
 // Panel tabs (engine docs/TOOL_DESIGN.md section 2 "Panels")
-constexpr const char* kIconAudio = "\xEE\xA3\x96";     // U+E8D6 Events
-constexpr const char* kIconInspector = "\xEE\xA7\xA9"; // U+E9E9 Event
-constexpr const char* kIconLayers = "\xEE\xA0\x9E";    // U+E81E MapLayers: Buses
-constexpr const char* kIconPreview = "\xEE\x9F\xB4";   // U+E7F4
-constexpr const char* kIconMusic = "\xEE\xB1\x8F";     // U+EC4F MusicNote
-constexpr const char* kIconVolume = "\xEE\x9D\xA7";    // U+E767 Mix
-constexpr const char* kIconConnect = "\xEE\x9C\x83";   // U+E703 Live
-constexpr const char* kIconLanguage = "\xEF\x8A\xB7";  // U+F2B7 LocaleLanguage
+constexpr const char* kIconAudio = "\xEE\xAD\x82";     // speaker_2 Events
+constexpr const char* kIconInspector = "\xEE\xA2\xBD"; // panel_right Event
+constexpr const char* kIconLayers = "\xEF\x93\x8B";    // layer MapLayers: Buses
+constexpr const char* kIconPreview = "\xEF\x8D\x99";   // desktop
+constexpr const char* kIconMusic = "\xEE\xA1\x94";     // music_note_2 MusicNote
+constexpr const char* kIconVolume = "\xEE\xAD\x82";    // speaker_2 Mix
+constexpr const char* kIconConnect = "\xEE\xA6\x99";   // plug_connected Live
+constexpr const char* kIconLanguage = "\xEF\x93\xB3";  // local_language LocaleLanguage
 const char* const kStandardBuses[] = {"master", "music", "sfx", "ui", "voice"}; // buses the runtime creates from the start
 
 // Checkbox and radio colors (engine docs/TOOL_DESIGN.md 3.1, 3.2): a gray 4 box on a gray 2 panel is about 1.25:1, so an unchecked

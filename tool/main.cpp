@@ -100,7 +100,11 @@ int runGolden(const std::string& project, bool update, const std::string& only) 
 // Returns whether the icon font loaded: without it icon buttons show their names (App::iconButton)
 bool loadFont(float size) {
     ImGuiIO& io = ImGui::GetIO();
+#if defined(_WIN32)
     const char* path = "C:\\Windows\\Fonts\\segoeui.ttf";
+#else
+    const char* path = "/usr/share/fonts/truetype/noto/NotoSans-Regular.ttf"; // Linux: Noto Sans (fonts-noto-core)
+#endif
     if (!SDL_GetPathInfo(path, nullptr) || !io.Fonts->AddFontFromFileTTF(path, size)) {
         ImFontConfig config;
         config.SizePixels = size;
@@ -108,14 +112,21 @@ bool loadFont(float size) {
     }
     ImFontConfig merge;
     merge.MergeMode = true;
+#if defined(_WIN32)
     const char* korean = "C:\\Windows\\Fonts\\malgun.ttf";
+#else
+    const char* korean = "/usr/share/fonts/truetype/nanum/NanumGothic.ttf";
+#endif
     if (SDL_GetPathInfo(korean, nullptr)) io.Fonts->AddFontFromFileTTF(korean, size, &merge);
-    // Segoe Fluent Icons on Windows 11, Segoe MDL2 Assets on 10: the editor's code points
-    for (const char* icons : {"C:\\Windows\\Fonts\\SegoeIcons.ttf", "C:\\Windows\\Fonts\\segmdl2.ttf"}) {
+    // Icon font (engine docs/TOOL_DESIGN.md section 2): Fluent UI System Icons beside the executable on every OS
+    // (third_party/fluent-icons, copied there by CMake)
+    {
+        const char* base = SDL_GetBasePath();
+        const std::string icons = std::string(base ? base : "") + "FluentSystemIcons-Regular.ttf";
         ImFontConfig config;
         config.MergeMode = true;
-        config.GlyphOffset = ImVec2(0.0f, 3.0f);
-        if (SDL_GetPathInfo(icons, nullptr) && io.Fonts->AddFontFromFileTTF(icons, size, &config)) return true;
+        config.GlyphOffset = ImVec2(0.0f, 2.0f);
+        if (SDL_GetPathInfo(icons.c_str(), nullptr) && io.Fonts->AddFontFromFileTTF(icons.c_str(), size + 1.0f, &config)) return true;
     }
     return false;
 }
