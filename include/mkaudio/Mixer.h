@@ -227,6 +227,13 @@ public:
     bool playing(Handle handle) const;
     void setGlobalParam(std::string_view name, float value); // parameters an event couldn't find on the sound (also music stem parameters)
 
+    // Audition one clip file (an asset browser's preview button): plays it 2D on the "ui" bus at volume and replaces the previous audition.
+    // The hidden event it uses is not in eventNames() and survives setEvents(). The file is decoded into memory on first use
+    Handle playFile(const std::string& file, float volume = 1.0f);
+    // Waveform of a clip file for drawing: the largest absolute sample (mixed to mono, 0..1) in each of bins equal parts, and the length in seconds.
+    // Reads through Desc::readFile when set. false if the file can't be read
+    bool peaks(const std::string& file, uint32_t bins, std::vector<float>& out, double& seconds) const;
+
     // Occlusion: 3D voices being mixed (the game checks a few of them per frame) and the result for one (0 = clear .. 1 = blocked, eased in)
     void emitters(std::vector<Emitter>& out) const;
     void setOcclusion(Handle handle, float amount);

@@ -372,6 +372,31 @@ void testReadFile() {
     mixer.stopAll();
 }
 
+// Audition: playFile plays a file without an event, replaces the previous one, stays hidden and survives setEvents; peaks reads a waveform
+void testAudition() {
+    const std::string file = "mkaudio_test_audition.wav";
+    CHECK(writeWav(file, 0.5, 330.0));
+    mkaudio::Desc desc;
+    desc.noDevice = true;
+    mkaudio::Mixer mixer;
+    CHECK(mixer.init(desc));
+    std::vector<float> peaks;
+    double seconds = 0.0;
+    CHECK(mixer.peaks(file, 20, peaks, seconds) && peaks.size() == 20 && std::fabs(seconds - 0.5) < 0.01);
+    CHECK(peaks[0] > 0.3f && peaks[19] > 0.3f && peaks[10] < 0.6f);
+    CHECK(!mixer.peaks("mkaudio_missing.wav", 20, peaks, seconds) && peaks.empty());
+    mkaudio::Handle first = mixer.playFile(file, 1.0f);
+    CHECK(frame(mixer) > 0.05f);
+    CHECK(mixer.playing(first));
+    CHECK(mixer.eventNames().empty());
+    mixer.setEvents({}); // the audition survives a definitions reload
+    mkaudio::Handle second = mixer.playFile(file, 0.5f);
+    frame(mixer);
+    CHECK(!mixer.playing(first) && mixer.playing(second));
+    mixer.shutdown();
+    std::remove(file.c_str());
+}
+
 // Golden renders: the same event renders the same envelope, a text round trip keeps it, and a volume change is a difference
 void testGolden() {
     const std::string file = "mkaudio_test_golden.wav";
@@ -413,6 +438,7 @@ int main() {
     testEventFile2();
     testSpatialMixMusic();
     testReadFile();
+    testAudition();
     const std::string beepFile = "mkaudio_test_beep.wav", humFile = "mkaudio_test_hum.wav";
     CHECK(writeWav(beepFile, 0.3, 440.0));
     CHECK(writeWav(humFile, 0.5, 220.0));
