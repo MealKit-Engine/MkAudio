@@ -2,7 +2,7 @@
 
 Sound event runtime for games, part of the [MealKit](https://github.com/MealKit-Engine/MealKit) tool family. Free, MIT.
 
-> **Beta (v0.x).** MealKit is under active development: APIs and file formats may change between versions until v1.0, and projects are moved forward with the upgrade tool. Feedback and bug reports are welcome.
+> **Beta (v0.x).** MealKit is under active development: APIs and file formats may change between versions, and projects are moved forward with the upgrade tool. Feedback and bug reports are welcome.
 
 Game code plays an **event name** with parameters; how it sounds is data a sound designer edits:
 
