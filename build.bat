@@ -1,5 +1,5 @@
 @echo off
-rem Builds MkAudio (Release, Ninja) into build\ and runs the tests. Same as MkQA's build.bat.
+rem Builds MkAudio (Release, Ninja) into build\windows\ and runs the tests. Same as MkQA's build.bat.
 rem Usage: build.bat            build + tests
 rem        build.bat install    also copy to %LOCALAPPDATA%\MealKit\tools\MkAudio (the editor's [Tools] menu finds it there)
 setlocal
@@ -10,9 +10,8 @@ call "%VS%\VC\Auxiliary\Build\vcvars64.bat" >nul || exit /b 1
 
 :build
 cd /d "%~dp0"
-rem An existing build folder keeps its generator (older ones were made with Visual Studio)
-if not exist build\CMakeCache.txt cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release || exit /b 1
-cmake --build build --config Release || exit /b 1
-ctest --test-dir build -C Release --output-on-failure || exit /b 1
-if /i "%~1"=="install" cmake --install build --config Release --prefix "%LOCALAPPDATA%\MealKit\tools\MkAudio" || exit /b 1
-echo [MkAudio] Build OK: %~dp0build\bin\MkAudio.exe
+if not exist build\windows\CMakeCache.txt cmake -S . -B build\windows -G Ninja -DCMAKE_BUILD_TYPE=Release || exit /b 1
+cmake --build build\windows --config Release || exit /b 1
+ctest --test-dir build\windows -C Release --output-on-failure || exit /b 1
+if /i "%~1"=="install" cmake --install build\windows --config Release --prefix "%LOCALAPPDATA%\MealKit\tools\MkAudio" || exit /b 1
+echo [MkAudio] Build OK: %~dp0build\windows\bin\MkAudio.exe

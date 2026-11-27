@@ -1,5 +1,5 @@
 # mkaudio: sound event runtime (MkAudio). Built standalone it includes tests and the authoring tool (tool/); added by another project with add_subdirectory, only the library.
-#   cmake -S . -B build && cmake --build build && ctest --test-dir build
+#   cmake -S . -B build/linux && cmake --build build/linux && ctest --test-dir build/linux   (build/<os>: windows, linux, macos)
 # Values the including side can set (defaults to this repo's third_party/):
 #   MKAUDIO_MINIAUDIO_DIR   folder containing miniaudio.h
 #   MKAUDIO_STB_DIR         folder containing stb_vorbis.c

@@ -72,19 +72,19 @@ Clip files are opened from disk by default. When they live in a pack file or mem
 `MkAudio` is the app sound designers use: a list of events, every setting of an event with curve and distance graphs, clips picked from the project's `assets/`, buses with parents, mix volumes, reverb, ducking and live meters, music tracks (stems, tempo, transitions; preview with the stem parameter and stingers), snapshots (preview on/off) and a reverb preview, preview through the same runtime the game uses (parameter, distance and occlusion sliders), undo, and a live connection to a running MealKit game or editor of the project (play the event in the game, see the game's voices and buses; saving updates the game at once).
 
 ```sh
-build/bin/MkAudio --project <MealKit project folder>
+build/linux/bin/MkAudio --project   # build/<os>/bin <MealKit project folder>
 ```
 
 Golden render tests: `MkAudio --golden --project <folder>` renders every event alone without a device (2D, fixed seed, parameters at their defaults) and compares its loudness over time (rms and peak per 10 ms, in dB) with `<project>/tests/audio/<event>.golden`, within 1.5 dB above -60 dB, so a changed clip, curve or bus fails while float noise between compilers does not. A missing file is written; `--update` rewrites them after an intended change, `--event <name>` runs one. It prints `GOLDEN ok|new|updated|FAIL <event>` and exits with 1 on a failure. The library side is `mkaudio/Golden.h` (`renderEnvelope`, `compareEnvelopes`).
 
-The MealKit editor lists it in its **Tools** menu when the folder with `MkAudio` and `mealkit-tool.txt` is in `%LOCALAPPDATA%\MealKit\tools\` (or pass `--tool-path build/bin` to the editor). Built with SDL3 and Dear ImGui.
+The MealKit editor lists it in its **Tools** menu when the folder with `MkAudio` and `mealkit-tool.txt` is in `%LOCALAPPDATA%\MealKit\tools\` (or pass `--tool-path build/<os>/bin` to the editor). Built with SDL3 and Dear ImGui.
 
 ## Build
 
 ```sh
-cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
-cmake --build build
-ctest --test-dir build --output-on-failure   # mixes without an audio device
+cmake -S . -B build/linux -G Ninja -DCMAKE_BUILD_TYPE=Release   # build/<os>: windows, linux, macos
+cmake --build build/linux
+ctest --test-dir build/linux --output-on-failure   # mixes without an audio device
 ```
 
 The library, the tests and the tool are built when this folder is the top-level project (`MKAUDIO_BUILD_TESTS`, `MKAUDIO_BUILD_TOOL`).
